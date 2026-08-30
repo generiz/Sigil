@@ -9,7 +9,7 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/pages.yml'
-  workflow_dispatch:
+  workflow_dispatch: {}
 
 permissions:
   contents: write
@@ -42,9 +42,11 @@ jobs:
           cp web-demo/index.html dist/index.html
           cp web-demo/styles.css dist/styles.css
           cp web-demo/app.js dist/app.js
+          cp web-demo/embed.js dist/embed.js
           touch dist/.nojekyll
           test -s dist/pkg/sigil_core_bg.wasm
           test -s dist/pkg/sigil_core.js
+          test -s dist/embed.js
       - name: Publish demo build branch
         run: |
           rm -rf /tmp/sigil-demo
