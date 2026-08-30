@@ -2,6 +2,8 @@
 
 Sigil aims to reduce avoidable plaintext exposure and metadata while keeping endpoint hardening, identity verification, symbol representation, visual presentation, fragment resilience, transport privacy and end-to-end cryptography separate.
 
+For a capability-based model of a well-resourced targeted adversary, see [`STATE_LEVEL_THREAT_MODEL.md`](STATE_LEVEL_THREAT_MODEL.md). Sigil does not claim immunity from any specific government, intelligence service or law-enforcement body.
+
 ## Designed to reduce
 
 - exposure to third-party keyboards through the normal IME path
@@ -19,6 +21,9 @@ Sigil aims to reduce avoidable plaintext exposure and metadata while keeping end
 - concentration of the full encrypted wire object on one storage node when fragment distribution is used
 - loss of the encrypted object when a bounded number of fragment nodes are unavailable
 - accidental forwarding of source image/audio container metadata
+- accidental disclosure of secret wrapper contents through debug formatting
+- exact authenticated envelope replay within a bounded process-local window
+- unbounded envelope parsing by rejecting oversized wire objects before deeper processing
 
 ## Endpoint limits
 
@@ -54,7 +59,13 @@ Both layers authenticate their ciphertext and associated data.
 
 Double encryption is useful here because the keys belong to different trust boundaries. It must not be described as automatically "twice as secure".
 
-The current core does not yet provide authenticated key exchange, a Double Ratchet-equivalent session protocol, replay protection or production key lifecycle management. Random `MessageSecret` and `TransportSecret` values are primitives used to build and test the envelope boundary.
+`MessageSecret` and `TransportSecret` zeroize their backing bytes on drop and use redacted `Debug` implementations so ordinary debug formatting does not print raw key material.
+
+The envelope parser applies a bounded wire-size policy before deeper processing. This is a resource-safety boundary for message envelopes, not a limit for future attachment transport.
+
+The current core includes a bounded in-memory `ReplayGuard` that records successfully authenticated wire-envelope digests and rejects an exact replay while it remains inside the configured window. Failed authentication is never inserted into replay state.
+
+This is **not** yet the production replay protocol. Sigil still lacks authenticated key exchange, a Double Ratchet-equivalent session protocol, persistent/session message numbering, ordering semantics and production key lifecycle management. Random `MessageSecret` and `TransportSecret` values remain primitives used to build and test the envelope boundary.
 
 ## Fragment-layer adversaries
 
@@ -152,3 +163,5 @@ Sensitive state should be minimized, compartmentalized, retained for the shortes
 ## Hardened platform direction
 
 A hardened deployment should additionally use verified boot, locked bootloader, current patches, restricted accessibility services, hardware-backed key storage and tight application permissions.
+
+Build-chain hardening is also part of the threat model. CI now enforces formatting, tests and Clippy, pins the Rust dependency resolution with `Cargo.lock`, and runs an advisory audit against that resolution. These controls reduce avoidable supply-chain risk but are not a reproducible-build proof or an external security audit.
