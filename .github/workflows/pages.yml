@@ -1,4 +1,4 @@
-name: pages
+name: demo-build
 
 on:
   push:
@@ -12,12 +12,10 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
-  group: pages
+  group: demo-build
   cancel-in-progress: true
 
 jobs:
@@ -39,7 +37,7 @@ jobs:
             --out-dir dist/pkg \
             --out-name sigil_core \
             --target web
-      - name: Assemble site
+      - name: Assemble demo
         run: |
           cp web-demo/index.html dist/index.html
           cp web-demo/styles.css dist/styles.css
@@ -47,20 +45,17 @@ jobs:
           touch dist/.nojekyll
           test -s dist/pkg/sigil_core_bg.wasm
           test -s dist/pkg/sigil_core.js
-      - uses: actions/configure-pages@v5
-        with:
-          enablement: true
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: dist
-
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Publish demo build branch
+        run: |
+          rm -rf /tmp/sigil-demo
+          mkdir -p /tmp/sigil-demo
+          cp -a dist/. /tmp/sigil-demo/
+          git config user.name generiz
+          git config user.email 39973192+generiz@users.noreply.github.com
+          git checkout --orphan demo-dist
+          git rm -rf .
+          git clean -fdx
+          cp -a /tmp/sigil-demo/. .
+          git add -A
+          git commit -m "update protocol demo build"
+          git push --force origin demo-dist
