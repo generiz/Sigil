@@ -1,6 +1,6 @@
 # Architecture
 
-Sigil separates secure input, symbol representation, pseudonymous identity, cryptography, visual presentation, media handling and network transport into distinct trust domains.
+Sigil separates secure input, symbol representation, pseudonymous identity, cryptography, visual presentation, fragment resilience, media handling and network transport into distinct trust domains.
 
 ## Message path
 
@@ -19,17 +19,23 @@ inner authenticated encryption
     |
 outer authenticated transport envelope
     |
-DeliveryEpoch
-    |-- fresh delivery token
-    |-- fresh routing token
+optional traffic-size padding
     |
-node route
+Reed-Solomon fragment coding
+    |
+opaque fragment capabilities
+    |
+node distribution
 ```
 
-The intended receive path is the inverse:
+The receive path reverses this order:
 
 ```text
-wire envelope
+opaque fragments
+    |
+threshold reconstruction
+    |
+outer authenticated wire envelope
     |
 outer authentication/decryption
     |
@@ -50,25 +56,21 @@ The receiver does not need to reconstruct a normal OS text string before renderi
 
 The sensitive composition surface does not rely on the normal Android text stack.
 
-Touch coordinates resolve to randomized key slots. Slots resolve to internal `SymbolId` values and short-lived input tokens. Clipboard, autofill, predictive text and a system IME are not part of the intended secure composition path.
+Touch coordinates resolve to randomized key slots. Slots resolve to internal `SymbolId` values and short-lived input tokens. Clipboard, autofill, predictive text and a system IME are not part of the intended secure path.
 
 The operating system still owns the touchscreen driver, process scheduler and final display pipeline. Avoiding the OS text stack reduces voluntary exposure; it does not make a compromised kernel safe.
 
 ## Message-scoped symbol representation
 
-A symbol has no permanent transmitted code.
-
 `SymbolMapKey` is derived from message secret material. The same internal symbol therefore receives a different 128-bit opaque code when the message secret changes.
 
-`SecureSymbolStream` is a sequence of those binary codes. It has no Unicode or `String` requirement.
-
-The receiver can resolve individual symbol codes against the same message-scoped map and pass the resulting `SymbolId` directly to the custom glyph layer.
+`SecureSymbolStream` is binary and has no Unicode or `String` requirement. The receiver can resolve individual symbol codes and pass resulting `SymbolId` values directly to a custom glyph layer.
 
 This mapping is endpoint compartmentalization, not message encryption.
 
 ## Cryptographic layers
 
-The current Rust core implements a two-layer authenticated envelope with XChaCha20-Poly1305.
+The Rust core implements two XChaCha20-Poly1305 layers with independent secret domains.
 
 ```text
 SecureSymbolStream
@@ -77,25 +79,41 @@ SecureSymbolStream
         v
 inner XChaCha20-Poly1305
         |
-        v
 version + inner nonce + inner ciphertext
         |
         | TransportSecret
         v
 outer XChaCha20-Poly1305
         |
-        v
 version + outer nonce + outer ciphertext
 ```
 
-The inner and outer layers use independent secret domains and fresh nonces. The inner nonce is not exposed outside the outer authenticated envelope.
+The inner layer protects end-to-end message content. The outer layer provides an independent transport envelope. Both authenticate their associated data and use fresh nonces.
 
-The intended security roles are different:
+Authenticated session establishment, forward secrecy, ratchet advancement, replay handling and production key lifecycle rules remain roadmap work.
 
-- inner layer: end-to-end message confidentiality/integrity
-- outer layer: independent transport protection
+See `CRYPTO_PIPELINE.md`.
 
-This is not yet a full messaging protocol. Authenticated session establishment, forward secrecy, ratchet advancement, replay handling and key lifecycle rules remain roadmap work.
+## Encrypted fragment layer
+
+Fragmentation occurs only after the outer authenticated envelope exists.
+
+The default `FragmentPolicy` uses 12 data shards and 8 parity shards. Any valid set of 12 of the resulting 20 pieces can reconstruct the encrypted wire object.
+
+Before coding, the wire object is padded with random alignment bytes to an exact multiple of the data-shard count. This is coding alignment, not traffic-size privacy padding.
+
+Each `OpaqueFragment` exposes only:
+
+```text
+256-bit random capability
+opaque shard payload
+```
+
+The fragment does not expose its coding index. `FragmentManifest` remains endpoint state and maps capabilities to coding positions, stores the original encrypted length and carries a BLAKE3 reconstruction digest.
+
+The digest is a consistency check. Cryptographic authority remains the outer AEAD authentication that follows reconstruction.
+
+See `FRAGMENTATION.md`.
 
 ## Pseudonymous identity
 
@@ -111,7 +129,7 @@ See `IDENTITY.md`.
 
 A verified contact may be represented locally by a minimal visual marker derived from the verified identity key plus a device-local visual secret.
 
-The human can therefore recognize a stable local marker while render tokens and network identifiers rotate independently.
+The human can recognize a stable local marker while render tokens and network identifiers rotate independently.
 
 Fresh render epochs reduce stable application-level state. They do not hide final pixels from a compromised OS/GPU.
 
@@ -119,7 +137,7 @@ See `VISUAL_LAYER.md`.
 
 ## Ephemeral delivery network
 
-Sigil no longer requires a permanent mailbox identifier in its core model.
+Sigil does not require a permanent mailbox identifier in its core model.
 
 A fresh `DeliveryEpoch` contains:
 
@@ -129,46 +147,17 @@ DeliveryToken
 RoutingToken
 ```
 
-These values are short-lived protocol state, not usernames.
+The node model supports a pool of 2 to 1000 distinct nodes.
 
-The node model supports a pool of 2 to 1000 distinct nodes. An individual route selects a distinct subset from that pool.
+`NodePool::targets_for_fragments()` spreads fragment targets across the available pool. If enough nodes exist, every fragment in that round receives a distinct target. If the pool is smaller, targets are reused only after shuffled passes through the pool.
 
-```text
-client -> entry -> [transit ...] -> store/delivery
-```
-
-The role boundaries are designed so that:
-
-- entry can observe the incoming network connection but not the final delivery token
-- transit does not require peer identity or plaintext
-- store/delivery can handle an opaque delivery token without the original client address or plaintext
+Target placement and route construction are separate concerns. A future live transport still needs entry/transit routing, retries, retrieval, expiry and authenticated state synchronization.
 
 The default policy target is `Maximum`, preferring token rotation, padding, route rotation, batching and bounded-delay targets over minimum latency.
 
 Live node transport, batching and delay scheduling are not implemented yet.
 
 See `PRIVACY_NETWORK.md`.
-
-## Future encrypted-piece delivery
-
-A future distributed-delivery layer may take the already authenticated outer wire envelope and encode it into redundant pieces for resilience across multiple routes/nodes.
-
-Ordering is mandatory:
-
-```text
-symbols
-  -> inner AEAD
-  -> outer AEAD
-  -> padding
-  -> redundancy/fragmentation
-  -> distributed delivery
-```
-
-Sigil must never split plaintext and treat fragmentation as confidentiality.
-
-The local endpoint would retain or derive the reconstruction metadata. Infrastructure should not require a permanent message identifier or human recipient label merely to hold a piece.
-
-This phase is not implemented yet and is not an anonymity guarantee.
 
 ## Media path
 
@@ -181,7 +170,7 @@ canonical pixels / audio frames
     |
 media encryption
     |
-transport
+fragment/transport path
 ```
 
 Images should be reconstructed from decoded pixels so source EXIF/XMP, thumbnails, filenames and container metadata are not forwarded by default.
