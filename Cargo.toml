@@ -1,0 +1,10 @@
+[package]
+name = "sigil-core"
+version = "0.1.0"
+edition = "2021"
+description = "Endpoint-hardening primitives for secure mobile composition"
+license = "MIT"
+
+[dependencies]
+rand = "0.8"
+zeroize = "1.8"
