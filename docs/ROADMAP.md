@@ -43,7 +43,32 @@ Still required before calling this a messaging protocol:
 - key lifecycle and recovery policy
 - interoperability test vectors
 
-## 0.3 — Android secure surface
+## 0.3 — encrypted-piece resilience
+
+Implemented:
+
+- Reed-Solomon coding applied only after the outer authenticated envelope exists
+- default 12 data + 8 parity fragments
+- reconstruction from any valid threshold of 12 fragments
+- recovery with eight missing pieces
+- random coding-alignment padding
+- random 256-bit capability per fragment
+- network-facing fragments without exposed coding index
+- endpoint `FragmentManifest` with capability-to-index mapping
+- BLAKE3 reconstruction consistency check
+- balanced fragment target spreading across node pools from 2 to 1000 nodes
+- integration test from `SymbolId` through double AEAD, piece loss, reconstruction and back to `SymbolId`
+
+Still required for live use:
+
+- authenticated or ratchet-derived manifest synchronization
+- per-fragment authentication for early rejection of corrupted pieces
+- TTL/expiry and deletion rules
+- upload/retrieval protocol
+- retry and partial-delivery state
+- live multi-node failure tests
+
+## 0.4 — Android secure surface
 
 - custom touch-driven composition surface
 - no system IME for secure input
@@ -56,7 +81,7 @@ Still required before calling this a messaging protocol:
 - screen-capture restrictions where supported
 - overlay/accessibility-risk handling
 
-## 0.4 — identity and invitations
+## 0.5 — identity and invitations
 
 - real identity-key generation and storage
 - hardware-backed identity-key adapter
@@ -66,7 +91,7 @@ Still required before calling this a messaging protocol:
 - explicit `KeyChanged` UX
 - visual marker bound to verified identity, never alias
 
-## 0.5 — authenticated session protocol
+## 0.6 — authenticated session protocol
 
 - reviewed authenticated session establishment
 - forward-secret message ratchet
@@ -74,10 +99,11 @@ Still required before calling this a messaging protocol:
 - transport-secret lifecycle
 - replay/order rules
 - delivery-token derivation/binding from authenticated session state
+- fragment capability/manifest derivation where appropriate
 - crash/restart state recovery without key reuse
 - interoperability vectors
 
-## 0.6 — live privacy transport
+## 0.7 — live privacy transport
 
 - dedicated transport client
 - live entry/transit/store node protocol
@@ -85,36 +111,23 @@ Still required before calling this a messaging protocol:
 - split-knowledge metadata enforcement
 - per-message or tightly bounded delivery/routing token rotation
 - node-pool discovery and health state
+- independent fragment upload/retrieval
 - route rotation
 - optional encrypted first-hop tunnel/VPN
 - opaque push wakeups
 - delivery/retry state
 - measured traffic-correlation analysis
 
-## 0.7 — maximum-privacy transport
+## 0.8 — maximum-privacy transport
 
-- size-class padding integrated into wire transport
+- size-class padding integrated into wire transport before fragment coding
 - delivery-window batching
 - bounded randomized delay
 - latency/battery/bandwidth measurements
-- unlinkability tests for repeated delivery identifiers
+- unlinkability tests for repeated delivery and fragment identifiers
 - explicit documentation of what a global passive observer can still correlate
 
 This phase targets reduced simple linkability, not guaranteed anonymity.
-
-## 0.8 — encrypted-piece resilience
-
-Research and implement only after the live encrypted transport is stable:
-
-- redundancy/erasure coding applied to already authenticated ciphertext
-- reconstruction with missing pieces
-- endpoint-controlled or ratchet-derived reconstruction metadata
-- independent delivery state for pieces
-- expiry and deletion policy
-- node-loss and partial-delivery tests
-- measurement of storage/bandwidth overhead
-
-Fragmentation is not encryption and must never operate on plaintext as a confidentiality mechanism.
 
 ## 0.9 — private media path
 
