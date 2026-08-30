@@ -15,8 +15,8 @@ pub use media::{
     ChunkPlan, MediaKind, MediaNormalization, MediaPlanError, MediaTransferPlan,
 };
 pub use network::{
-    DeliveryEpoch, MailboxToken, MessageEpoch, PrivacyMode, PrivacyPolicy, RelayId, RelayRole,
-    RelayVisibility, RouteError, RoutePlan, RoutingToken, TrafficSizeClass,
+    DeliveryEpoch, DeliveryToken, MessageEpoch, NodeId, NodePool, NodeRole, NodeVisibility,
+    PrivacyMode, PrivacyPolicy, RouteError, RoutePlan, RoutingToken, TrafficSizeClass,
 };
 pub use symbol_stream::{SecureSymbolStream, SymbolMapKey, SymbolStreamError};
 pub use visual::{
