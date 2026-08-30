@@ -46,9 +46,17 @@ wire envelope
 
 Both layers use fresh nonces and authenticated associated data. The inner nonce and ciphertext are themselves protected by the outer layer.
 
+Secret wrapper types zeroize their backing bytes on drop and use redacted debug formatting. The wire parser also rejects malformed or oversized message envelopes before deeper processing.
+
 This is not a ratchet yet. Authenticated key exchange, forward secrecy and ratchet advancement remain protocol work.
 
 See `docs/CRYPTO_PIPELINE.md`.
+
+## Replay handling
+
+The core includes a bounded in-memory `ReplayGuard` for exact authenticated envelope replays. A wire envelope is added to replay state only after successful authentication; an exact replay inside the configured window is rejected.
+
+This is a hardening primitive, not the final session protocol. Persistent/session message numbering, ordering semantics and ratchet-integrated replay protection remain future work.
 
 ## Encrypted fragment layer
 
@@ -124,7 +132,11 @@ See `docs/MEDIA.md`.
 
 Sigil does not claim that plaintext can never exist, keylogging is impossible, a compromised endpoint remains confidential, or traffic is impossible to trace.
 
+A capable targeted adversary may combine telecom visibility, compromised infrastructure, endpoint exploits, seized devices, account compromise, supply-chain access and traffic correlation. Sigil does not claim that a specific government, intelligence service or law-enforcement body cannot investigate or compromise a user.
+
 If the user can see a glyph, color, image or message, the device necessarily contains enough information at some stage to render those pixels. The goal is to minimize semantic plaintext lifetime and avoid unnecessary OS text surfaces.
+
+See `SECURITY.md`, `docs/THREAT_MODEL.md` and `docs/STATE_LEVEL_THREAT_MODEL.md`.
 
 ## Current implementation
 
@@ -135,6 +147,9 @@ Implemented in the Rust core:
 - `SecureSymbolStream` with symbol-by-symbol decode
 - layered XChaCha20-Poly1305 authenticated encryption
 - independent message and transport secrets
+- secret zeroization and redacted debug formatting
+- bounded wire-envelope parsing
+- bounded exact-envelope replay rejection after successful authentication
 - 12-of-20 default Reed-Solomon fragment recovery
 - random per-fragment capabilities
 - endpoint-only reconstruction manifest model
@@ -149,15 +164,20 @@ Implemented in the Rust core:
 - local visual marker derivation
 - ephemeral visual render epochs
 - cross-platform Rust CI
+- pinned Rust dependency resolution with `Cargo.lock`
+- scheduled dependency advisory audit
 
 Not implemented yet:
 
 - authenticated key exchange and forward-secret message ratchet
+- persistent/session replay numbering and ordering semantics
 - hardware-backed production key storage
 - Android secure input/rendering surface
 - live distributed nodes, upload/retrieval or mix scheduling
 - fragment TTL and ratchet-derived reconstruction state
 - live media codecs and media encryption pipeline
+- reproducible signed production releases
+- independent cryptographic/application security audit
 
 Features are considered implemented only when code, tests and documentation agree.
 
