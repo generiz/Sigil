@@ -54,16 +54,21 @@
           </label>
 
           <label class="range-control" id="nodeControl">
-            <span>nodos virtuales</span>
-            <input id="nodeInput" type="range" min="2" max="24" value="8">
+            <span>pool de nodos virtuales</span>
+            <input id="nodeInput" type="range" min="2" max="1000" value="8">
             <b id="nodeValue">8</b>
           </label>
 
           <label class="range-control">
-            <span>shards a perder</span>
-            <input id="lossInput" type="range" min="0" max="8" value="8">
-            <b id="lossValue">8</b>
+            <span>shards a perder antes de la red</span>
+            <input id="lossInput" type="range" min="0" max="8" value="0">
+            <b id="lossValue">0</b>
           </label>
+
+          <div class="node-actions">
+            <button id="failNodeButton" type="button" class="secondary">Matar nodo aleatorio</button>
+            <button id="restoreNodesButton" type="button" class="secondary">Restaurar nodos</button>
+          </div>
 
           <button id="sendButton" type="button">Ejecutar ahora</button>
         </div>
@@ -100,13 +105,14 @@
           <div class="stage node-stage" data-stage="nodes">
             <div class="stage-index">D</div>
             <div><b>Virtual node transport</b><span id="nodeStatus">esperando</span></div>
-            <div class="sim-label"><span>SIMULATION</span><small>las rutas de esta etapa no representan infraestructura física</small></div>
+            <div class="sim-label"><span>SIMULATION</span><small>tocá un nodo para apagarlo o restaurarlo; todos sus shards dejan de estar disponibles para la reconstrucción real</small></div>
             <div id="nodeMap" class="node-map" aria-label="Topología de nodos simulados">
               <div class="sim-endpoint sender">TX</div>
               <div id="virtualNodes" class="virtual-nodes"></div>
               <div class="sim-endpoint receiver">RX</div>
               <div id="packetLayer" class="packet-layer" aria-hidden="true"></div>
             </div>
+            <div id="nodeFailureState" class="node-failure-state">0 nodos caídos</div>
           </div>
           <div class="connector"><i></i></div>
 
@@ -149,7 +155,7 @@
 
     <section class="facts">
       <div><span>CORE REAL</span><p>Symbol encoding, XChaCha20-Poly1305, Reed–Solomon, reconstrucción y autenticación se ejecutan realmente en Rust/WASM.</p></div>
-      <div><span>NODOS SIMULADOS</span><p>Los shards reales de esa ejecución se asignan a una topología virtual para visualizar distribución, pérdida y llegada. No se afirma que existan esos servidores.</p></div>
+      <div><span>FALLO DE NODO</span><p>La topología es simulada, pero al apagar un nodo sus shards se eliminan del conjunto que el mismo core WASM usa para intentar reconstruir el ciphertext.</p></div>
       <div><span>LOCAL</span><p>El mensaje de esta demo no sale del navegador. La capa de red distribuida de Sigil es una fase separada del proyecto.</p></div>
     </section>
   </main>
