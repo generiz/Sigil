@@ -2,43 +2,35 @@
 
 Secure mobile messaging research focused on reducing plaintext exposure, minimizing metadata and separating visible identity from cryptographic identity.
 
-Sigil is designed around a secure composition surface that does not use the operating system's normal text pipeline. Sensitive input is handled through direct touch events, randomized key placement, ephemeral symbol mappings and custom glyph rendering.
+Sigil treats secure input, identity, encryption, visual presentation, media handling and network privacy as separate layers. None is presented as a substitute for the others.
 
-The project treats endpoint hardening, identity, encryption, media handling and network privacy as separate layers. None of them is presented as a substitute for the others.
+## Core idea
 
-## Design principles
+The secure composer avoids the normal operating-system text path: no system IME, no standard text field, no clipboard/autofill integration for sensitive composition, randomized key placement, ephemeral symbol mappings and custom rendering.
 
-- no system IME in the secure composer
-- no standard OS text field for sensitive input
-- no clipboard, autofill or predictive-text integration
-- custom glyph rendering for the secure composition surface
-- randomized keyboard layout per composition session
-- ephemeral internal symbol representation
-- minimal lifetime for sensitive buffers
-- pseudonymous contacts by default: no real names required in the UI
-- cryptographic identity verification independent of the visible alias
-- end-to-end encryption as a separate protocol layer
-- hardware-backed key storage where the platform supports it
-- privacy-oriented multi-hop delivery with explicit metadata boundaries
-- media normalization before encryption to avoid forwarding source metadata
+The receive side follows the same principle. A contact can remain visually recognizable to the human while protocol and delivery identifiers rotate underneath it.
+
+**Stable to the human, ephemeral to the network.**
+
+A local contact marker may be a simple color/shape/pattern, for example a green dot. That marker is derived locally from verified identity material and a device-local visual secret. It is not sent as a network identity and has no authentication authority by itself.
+
+Each visual render epoch uses fresh internal state. This does not hide final pixels from a compromised OS/GPU; it avoids designing stable application-level visual identifiers where they are unnecessary.
+
+See `docs/VISUAL_LAYER.md`.
 
 ## Identity without names
 
-A Sigil contact is not identified by a human name, phone number or username in the secure UI.
+The secure UI does not require real names, phone numbers or global usernames. Random aliases are presentation only.
 
-The visible contact label is a random alias such as `A73F-19C2-6D04-8BE1`. The alias can rotate and has no security meaning by itself.
+Trust is pinned to cryptographic identity material and verified out-of-band with a fingerprint or QR representation. If a verified key changes, trust becomes `KeyChanged` and requires a new verification decision.
 
-Trust is bound to cryptographic identity material. A contact can be verified by comparing a fingerprint or scanning a QR code over an independent channel. Once verified, the pinned identity key is the authority. If that key changes, Sigil must surface a security event and require re-verification.
-
-This lets the interface remain pseudonymous while still answering the important question: "is this the same cryptographic identity I verified before?"
+The important invariant is not "this contact is named Marcelo". It is "this is the same cryptographic identity I verified before".
 
 See `docs/IDENTITY.md`.
 
-## Network model
+## Ephemeral delivery
 
-Sigil does not need an embedded browser for messaging. The intended client uses its own transport stack.
-
-The privacy-network direction is split-knowledge delivery:
+The privacy-network target is split-knowledge delivery:
 
 ```text
 Device
@@ -52,38 +44,47 @@ Transit relay
 Opaque mailbox relay
 ```
 
-The entry relay may know the client's network address but should not know the peer identity or message content. The mailbox relay may know an opaque mailbox token but should not know the client's original address. Message content remains end-to-end encrypted.
+A delivery epoch has fresh opaque message, routing and mailbox tokens. The protocol direction is to rotate these at message boundaries rather than expose a stable username or mailbox address.
 
-This design reduces metadata concentration; it does not make traffic correlation or endpoint tracing impossible.
+Traffic-size classes are modeled so exact small-message length does not need to be exposed. The maximum-privacy design target additionally allows route rotation, batching and bounded randomized delivery delay, accepting higher latency and bandwidth cost.
+
+These measures reduce linkability. They do not guarantee anonymity against a global observer capable of correlating both ends of traffic.
 
 See `docs/PRIVACY_NETWORK.md`.
 
 ## Photos and audio
 
-Source media should not be forwarded byte-for-byte by default.
+Images are intended to be decoded to pixels, reconstructed without source EXIF/XMP/container metadata, chunked and encrypted with an independent media key.
 
-Images are intended to be decoded to pixels, stripped of source metadata, re-encoded into a canonical format, chunked and encrypted with an independent media key.
+Voice messages are intended to move from microphone samples to normalized audio frames and encrypted chunks without requiring a long-lived plaintext recording first.
 
-Voice messages are intended to flow from microphone samples to a normalized audio representation such as PCM/Opus frames, then into encrypted chunks without first requiring a long-lived plaintext file.
-
-Received media should remain inside Sigil's protected storage/rendering path unless the user explicitly exports it.
+Received media stays inside Sigil's protected path unless the user explicitly exports it.
 
 See `docs/MEDIA.md`.
 
 ## Security boundary
 
-Randomized layouts and ephemeral symbol mappings can reduce exposure to specific classes of input logging, memory string scanning and accidental OS text integration. They do not make a compromised operating system safe.
+Sigil does not claim that plaintext can never exist, that a compromised endpoint remains confidential, or that an IP address becomes impossible to trace.
 
-Multi-hop relays can reduce how much metadata a single service learns. They cannot guarantee that a sufficiently capable observer cannot correlate traffic.
-
-Media normalization can remove ordinary file metadata. It cannot remove identifying visual or acoustic content from the media itself.
-
-Sigil does not claim immunity to keyloggers, tracing, interception or endpoint compromise.
+If the user can see a color, glyph, image or message, the device necessarily produces enough final display information to render it. Endpoint hardening reduces avoidable exposure; end-to-end cryptography protects message content; privacy routing reduces metadata concentration.
 
 ## Current implementation
 
-The repository currently contains the secure composition core plus early protocol-domain models for pseudonymous identity, media transfer planning and relay knowledge boundaries.
+The Rust core currently contains:
 
-Authenticated key generation, message ratcheting, AEAD envelopes, Android UI, live relays and real media codecs are not implemented yet. Those components will be added only with established constructions, explicit tests and clear security boundaries.
+- randomized secure-composition primitives
+- ephemeral symbol tokens and explicit buffer clearing
+- pseudonymous contact and trust-state models
+- identity fingerprints
+- media normalization/chunk planning contracts
+- split-knowledge relay visibility contracts
+- fresh delivery-epoch, routing and mailbox tokens
+- traffic-size classes and privacy-policy targets
+- local visual marker derivation
+- ephemeral visual render epochs
+
+Authenticated session establishment, a reviewed ratchet, AEAD message envelopes, Android UI/GPU rendering, live relays, batching/delay transport and real media codecs are not implemented yet.
+
+Features are only considered implemented when code, tests and documentation agree.
 
 See `docs/ARCHITECTURE.md`, `docs/THREAT_MODEL.md` and `docs/ROADMAP.md`.

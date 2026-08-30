@@ -26,6 +26,49 @@ impl MailboxToken {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct RoutingToken([u8; 32]);
+
+impl RoutingToken {
+    pub fn random() -> Self {
+        let mut bytes = [0u8; 32];
+        OsRng.fill_bytes(&mut bytes);
+        Self(bytes)
+    }
+
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct MessageEpoch([u8; 16]);
+
+impl MessageEpoch {
+    pub fn random() -> Self {
+        let mut bytes = [0u8; 16];
+        OsRng.fill_bytes(&mut bytes);
+        Self(bytes)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DeliveryEpoch {
+    pub epoch: MessageEpoch,
+    pub mailbox: MailboxToken,
+    pub routing: RoutingToken,
+}
+
+impl DeliveryEpoch {
+    pub fn fresh() -> Self {
+        Self {
+            epoch: MessageEpoch::random(),
+            mailbox: MailboxToken::random(),
+            routing: RoutingToken::random(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RelayRole {
     Entry,
@@ -92,6 +135,75 @@ impl RoutePlan {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TrafficSizeClass {
+    KiB4,
+    KiB16,
+    KiB64,
+    KiB256,
+}
+
+impl TrafficSizeClass {
+    pub fn bytes(self) -> usize {
+        match self {
+            Self::KiB4 => 4 * 1024,
+            Self::KiB16 => 16 * 1024,
+            Self::KiB64 => 64 * 1024,
+            Self::KiB256 => 256 * 1024,
+        }
+    }
+
+    pub fn smallest_for(payload_len: usize) -> Option<Self> {
+        [Self::KiB4, Self::KiB16, Self::KiB64, Self::KiB256]
+            .into_iter()
+            .find(|class| payload_len <= class.bytes())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrivacyMode {
+    Standard,
+    Private,
+    Maximum,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PrivacyPolicy {
+    pub rotate_delivery_tokens_per_message: bool,
+    pub pad_to_size_class: bool,
+    pub route_rotation: bool,
+    pub batching_target: bool,
+    pub bounded_delay_target: bool,
+}
+
+impl PrivacyMode {
+    pub fn policy(self) -> PrivacyPolicy {
+        match self {
+            Self::Standard => PrivacyPolicy {
+                rotate_delivery_tokens_per_message: true,
+                pad_to_size_class: false,
+                route_rotation: false,
+                batching_target: false,
+                bounded_delay_target: false,
+            },
+            Self::Private => PrivacyPolicy {
+                rotate_delivery_tokens_per_message: true,
+                pad_to_size_class: true,
+                route_rotation: true,
+                batching_target: false,
+                bounded_delay_target: false,
+            },
+            Self::Maximum => PrivacyPolicy {
+                rotate_delivery_tokens_per_message: true,
+                pad_to_size_class: true,
+                route_rotation: true,
+                batching_target: true,
+                bounded_delay_target: true,
+            },
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -117,10 +229,35 @@ mod tests {
     }
 
     #[test]
-    fn mailbox_token_is_opaque_random_material() {
-        let first = MailboxToken::random();
-        let second = MailboxToken::random();
-        assert_ne!(first, second);
-        assert_eq!(first.as_bytes().len(), 32);
+    fn delivery_epochs_rotate_opaque_tokens() {
+        let first = DeliveryEpoch::fresh();
+        let second = DeliveryEpoch::fresh();
+        assert_ne!(first.epoch, second.epoch);
+        assert_ne!(first.mailbox, second.mailbox);
+        assert_ne!(first.routing, second.routing);
+    }
+
+    #[test]
+    fn size_classes_hide_exact_small_payload_length() {
+        assert_eq!(TrafficSizeClass::smallest_for(1), Some(TrafficSizeClass::KiB4));
+        assert_eq!(
+            TrafficSizeClass::smallest_for(4096),
+            Some(TrafficSizeClass::KiB4)
+        );
+        assert_eq!(
+            TrafficSizeClass::smallest_for(4097),
+            Some(TrafficSizeClass::KiB16)
+        );
+        assert_eq!(TrafficSizeClass::smallest_for(300_000), None);
+    }
+
+    #[test]
+    fn maximum_mode_prefers_privacy_over_latency() {
+        let policy = PrivacyMode::Maximum.policy();
+        assert!(policy.rotate_delivery_tokens_per_message);
+        assert!(policy.pad_to_size_class);
+        assert!(policy.route_rotation);
+        assert!(policy.batching_target);
+        assert!(policy.bounded_delay_target);
     }
 }

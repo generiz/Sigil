@@ -1,17 +1,17 @@
 # Privacy network
 
-Sigil is an online messenger. The client should use a dedicated transport stack rather than an embedded browser.
+Sigil is an online messenger with a dedicated transport stack. A general-purpose browser is not part of the message path.
 
 ## Goal
 
-Reduce metadata concentration so that no single Sigil-operated component is designed to know all of:
+Reduce metadata concentration and linkability so that no single Sigil-operated component is designed to know all of:
 
 - the client's original network address
 - the peer's cryptographic identity
 - the destination mailbox meaning
-- the plaintext message content
+- plaintext content
 
-End-to-end encryption protects content. Relay separation limits what individual infrastructure components can learn.
+End-to-end encryption protects content. Relay separation and ephemeral delivery state reduce what individual infrastructure components can learn.
 
 ## Route model
 
@@ -27,56 +27,83 @@ Transit relay
 Mailbox relay
 ```
 
-The receiver uses an independent route to fetch from the mailbox layer.
+The receiver uses an independent route to retrieve opaque envelopes.
 
 ## Relay roles
 
-### Entry relay
+### Entry
 
-May observe the source network connection.
+May observe the source network connection. It should not receive peer identity, a human contact label, plaintext or the final mailbox token.
 
-It should not receive a human contact name, peer identity label or plaintext message. It forwards opaque protocol traffic toward the next hop.
+### Transit
 
-### Transit relay
+Forwards opaque traffic between route layers. It should not receive application plaintext or stable human identity.
 
-Forwards opaque traffic between route layers.
+### Mailbox
 
-It should not receive application plaintext or a stable human identity. Its purpose is to prevent the entry and mailbox roles from being collapsed into one observer.
+Stores/delivers opaque envelopes addressed by short-lived mailbox capabilities. It should not require the sender's original network address or a human-readable recipient identity.
 
-### Mailbox relay
+## Ephemeral delivery state
 
-Stores and delivers opaque encrypted envelopes using a mailbox token.
+A mailbox token is not a username. The protocol target is for delivery state to rotate aggressively.
 
-It should not need the sender's original network address or a human-readable recipient identity.
+Conceptually:
 
-## Mailbox tokens
+```text
+message epoch N
+  routing token A
+  mailbox token B
 
-A mailbox token is an opaque capability used for delivery. It is not a username.
+message epoch N+1
+  routing token C
+  mailbox token D
+```
 
-Tokens should be scoped, replaceable and derived or distributed through authenticated session state. A server should not be able to convert a mailbox token into a real-world name from Sigil's protocol database.
+The current Rust core can generate independent opaque delivery epochs. A future authenticated ratchet/session must derive or distribute these values so both endpoints can advance safely without exposing a permanent recipient identifier.
+
+Repeated random tokens by themselves do not create anonymity. Correct synchronization, replay handling, relay behavior and cryptographic binding still need implementation and review.
+
+## Traffic-size classes
+
+Exact ciphertext length can leak information. Sigil models fixed size classes for small envelopes so different payload lengths can share the same external size.
+
+Current model classes are 4 KiB, 16 KiB, 64 KiB and 256 KiB. Larger media uses a separate chunking strategy.
+
+Padding consumes bandwidth and does not conceal timing or direction by itself.
+
+## Privacy modes
+
+The core models three policy targets:
+
+- `Standard`: fresh delivery tokens, latency-focused
+- `Private`: token rotation + size classes + route rotation target
+- `Maximum`: adds batching and bounded-delay targets, accepting higher latency/bandwidth cost
+
+`Maximum` is a design target, not a claim that a mix network is currently implemented.
+
+## Timing correlation
+
+Even perfect payload encryption does not hide the fact that packets exist. An observer watching both ends may correlate timing, direction, volume and bursts.
+
+The maximum-privacy transport may therefore evaluate:
+
+- route rotation
+- batching messages into delivery windows
+- bounded randomized delay
+- size classes/padding
+
+These reduce some easy correlations at a cost in latency and battery. They do not guarantee anonymity against a global passive observer.
+
+Sigil does not claim that an IP address becomes impossible to trace.
 
 ## VPN use
 
-A VPN or encrypted tunnel can protect the local network path and hide Sigil traffic from the immediate access network.
-
-It does not create guaranteed anonymity. The VPN endpoint can observe the client's connection, and traffic timing/volume can still be correlated by sufficiently capable observers.
-
-For that reason, VPN/tunnel protection is considered an outer transport layer, not the identity or anonymity mechanism.
+A VPN/encrypted tunnel can protect the local path and move first-hop visibility away from the access network. The VPN endpoint can still observe the client's connection, so VPN protection is an outer layer, not the identity/anonymity mechanism.
 
 ## Push notifications
 
-Push providers should receive no message text, sender alias or media preview.
-
-A push notification should mean only that opaque data may be available. The client then retrieves encrypted envelopes through the normal privacy route.
-
-## Traffic analysis
-
-Multi-hop routing does not defeat a global passive observer by itself.
-
-Potential future mitigations can include batching, bounded delivery delay, route rotation and size classes, but these must be evaluated against battery, latency and bandwidth costs. Sigil should not introduce large amounts of deceptive cover traffic merely to support an unprovable anonymity claim.
+Push providers should receive no message text, sender alias, visual marker or media preview. A push should carry only an opaque wake-up signal; the client retrieves and authenticates data through the privacy route.
 
 ## Browser boundary
 
-A general-purpose browser or WebView is not part of the trusted message-delivery path.
-
-Links initially open externally with explicit user action. A future isolated viewer must run outside the secure composition and cryptographic state domains and must not receive conversation keys or message buffers.
+Links initially open externally with explicit user action. A future isolated link viewer must run outside the secure composition, visual and cryptographic state domains and must not receive conversation keys or sensitive buffers.

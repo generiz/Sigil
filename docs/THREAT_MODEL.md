@@ -1,98 +1,99 @@
 # Threat model
 
-Sigil is designed to reduce avoidable plaintext exposure on a mobile endpoint, minimize unnecessary metadata and preserve a clear distinction between endpoint hardening, identity verification, transport privacy and end-to-end cryptography.
+Sigil aims to reduce avoidable plaintext exposure and metadata while keeping endpoint hardening, identity verification, visual presentation, transport privacy and end-to-end cryptography separate.
 
-## Protect against
+## Designed to reduce
 
-- third-party or compromised keyboard applications observing sensitive input through the normal IME path
-- accidental clipboard exposure
-- autofill and predictive-text collection
+- exposure to third-party keyboards through the normal IME path
+- clipboard, autofill and predictive-text leakage
 - standard text-widget accessibility disclosure
 - stable touch-coordinate meaning across composition sessions
 - trivial plaintext string scanning of the secure composition buffer
-- unnecessary retention of sensitive state after composition
-- casual exposure of real-world names in the secure contact UI
-- a single relay learning client network address, peer identity and message content at the same time
-- source photo metadata such as EXIF/XMP being forwarded accidentally
-- source audio/container metadata being forwarded accidentally
-- silent trust inheritance after a verified contact identity key changes
+- unnecessary retention of sensitive state
+- casual real-name/phone exposure in the secure UI
+- silent trust inheritance after an identity-key change
+- stable application-level contact identifiers in delivery traffic
+- exact small-message length leakage where padding classes are used
+- one relay learning source network, peer identity and plaintext together
+- accidental forwarding of source image/audio container metadata
 
-## Out of scope for the secure composer alone
+## Endpoint limits
+
+The secure composer and visual layer alone do not protect against:
 
 - a compromised Android kernel
 - privileged malware inside the Sigil process
-- malicious firmware or touchscreen controller
-- an attacker that captures both rendered pixels and touch coordinates
-- GPU/framebuffer capture by a privileged adversary
-- physical cameras observing the screen and the user's hands
+- malicious firmware/touchscreen controller
+- simultaneous capture of rendered pixels and touch coordinates
+- privileged GPU/framebuffer capture
+- physical cameras observing the screen or hands
 
-These require platform integrity, operational controls or a hardened device profile in addition to application design.
+If a human can read a message or recognize a color on the display, the endpoint necessarily contains enough information at some stage to render it.
+
+## Visual adversaries
+
+Visual markers and render-token rotation are not encryption.
+
+A device-local marker can avoid sending a human-readable identity to the network and can remove the need for a stable server-side profile label. Fresh render epochs can reduce stable internal state. Neither prevents a compromised display stack from observing final pixels.
+
+A copied color/shape/alias must never create trust. Trust comes only from verified identity material.
 
 ## Network adversaries
 
-The privacy-network design assumes that individual relays may be curious or compromised.
+Individual relays may be curious or compromised. Split-knowledge routing aims to keep source network visibility separate from mailbox capability visibility and plaintext content.
 
-The architecture therefore aims to prevent any one relay from learning the complete relationship between source network address, destination mailbox and plaintext content.
+Delivery epochs, routing tokens and mailbox tokens are intended to rotate rather than expose a permanent username/mailbox handle.
 
-It does not assume that relay separation defeats a global passive observer. An observer capable of monitoring both sides of a route may correlate timing, size, direction and volume. VPN use changes which network operator sees the first hop; it does not remove the possibility of traffic analysis.
+This does not defeat a global passive observer. An observer monitoring both sides of a route may correlate timing, size, direction and volume. VPN use changes who sees the first hop; it does not eliminate traffic analysis.
 
-Sigil must not claim that an IP address is impossible to trace or that multi-hop routing provides guaranteed anonymity.
+Size padding hides exact lengths within a class but not timing, direction or the existence of traffic. Batching and bounded randomized delay may reduce some timing correlation, at a latency/battery cost, but are not an anonymity proof.
+
+Sigil must not claim that an IP address is impossible to trace.
 
 ## Identity adversaries
 
-Visible aliases are intentionally non-authoritative.
+Random aliases and local visual markers are intentionally non-authoritative. They can be copied or imitated without creating trust.
 
-A malicious party may copy, guess or imitate another contact's alias. That must not create trust.
+Trust comes from fingerprint/QR verification over an independent channel followed by local pinning of cryptographic identity material.
 
-Trust comes from verified cryptographic identity material. The expected workflow is fingerprint comparison or QR verification over an independent channel, followed by local pinning of the verified identity key.
+If a verified identity key changes, Sigil must enter `KeyChanged` and require re-verification. Matching presentation state cannot suppress the warning.
 
-If the identity key changes, Sigil must surface that state and require a new verification decision. A display alias must never override a key-change warning.
-
-Verification also has a social boundary: confirming a key only proves continuity with the key that was verified. It does not independently prove a person's legal name or real-world biography.
+Verification proves continuity with the key that was checked; it does not independently prove legal identity.
 
 ## Media adversaries
 
-Media normalization removes ordinary source-container metadata only when the decoder/re-encoder path is implemented correctly.
+Media normalization can remove ordinary source-container metadata only when the decoder/re-encoder path is implemented correctly.
 
-It does not remove identifying information contained in the visible image or audible recording itself. Faces, locations, reflections, voices, background sounds and visual text may still identify a person or place.
+It cannot remove identifying information visible or audible in the content itself: faces, places, reflections, voices, background sounds or text may still identify a person/location.
 
-Media decoders are also a parser attack surface. They should be isolated where practical, bounded in memory/size and treated as untrusted-input processors.
+Media decoders are parser attack surfaces and should be isolated and resource-bounded where practical.
 
 ## Security principles
 
-### No security through symbol substitution
+### Encryption remains separate
 
-Ephemeral symbol tokens and randomized key layouts are not encryption. They exist to reduce exposure and break stable representations at the endpoint.
+Symbol substitution, random aliases, visual markers, token rotation and padding are not substitutes for authenticated encryption. Confidentiality must come from reviewed cryptographic constructions and ratcheted session keys.
 
-Message confidentiality must come from established authenticated encryption and ratcheted session keys.
+### Stable to the human, ephemeral to the network
 
-### No security through alias secrecy
-
-Random aliases are a UI privacy feature. They are not credentials, authentication factors or encryption keys.
+Human usability may require a stable local recognition anchor. That anchor should not become a permanent network identifier. Delivery state should be short-lived and cryptographically bound to authenticated session state once the protocol exists.
 
 ### Minimize relay knowledge
 
-A relay should receive only the routing metadata needed for its role. No single backend component should be designed to know source address, peer identity and plaintext content together.
+No relay role is designed to receive source network address, peer identity and plaintext together.
 
 ### Normalize before forwarding
 
-Source media should be decoded and reconstructed into a controlled representation before encrypted transfer when practical. Byte-for-byte forwarding is opt-in, not the privacy-preserving default.
+Source media should be reconstructed into a controlled representation before encrypted transfer when practical. Byte-for-byte forwarding is not the privacy-preserving default.
 
 ### No absolute claims
 
-Sigil does not claim that plaintext can never exist, that keylogging is impossible, that an IP address can never be traced, or that a compromised endpoint remains confidential.
-
-If a human can read a message on a display, the endpoint necessarily contains enough information at some stage to render that message.
+Sigil does not claim that plaintext can never exist, keylogging is impossible, traffic is untraceable, or a compromised endpoint stays confidential.
 
 ### Minimize, separate, destroy
 
-Sensitive state should be:
+Sensitive state should be minimized, compartmentalized, retained for the shortest useful lifetime and explicitly cleared where the language/platform permit.
 
-1. minimized to the information required for the current operation
-2. separated across components where practical
-3. retained for the shortest useful lifetime
-4. explicitly cleared where the language and platform permit
+## Hardened platform direction
 
-## Future platform requirements
-
-A hardened deployment should additionally rely on verified boot, a locked bootloader, current security patches, restricted accessibility services, hardware-backed key storage and tight application permissions.
+A hardened deployment should additionally use verified boot, locked bootloader, current patches, restricted accessibility services, hardware-backed key storage and tight application permissions.

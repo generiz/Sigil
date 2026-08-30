@@ -1,12 +1,20 @@
 # Roadmap
 
-## 0.1 — secure composition core
+## 0.1 — core models
+
+Implemented:
 
 - session-scoped randomized key layout
-- opaque symbol identifiers
-- ephemeral symbol-token mapping
-- sensitive token buffer with explicit clearing
-- deterministic invariants and fuzzable core boundaries
+- opaque symbol identifiers and ephemeral symbol tokens
+- sensitive buffer clearing
+- pseudonymous contact/trust-state model
+- identity fingerprint model
+- media normalization/chunk planning contracts
+- split-knowledge relay-role contracts
+- opaque mailbox/routing/message epoch tokens
+- traffic size classes and privacy-policy targets
+- local visual marker derivation
+- ephemeral visual render epochs
 - cross-platform Rust CI
 
 ## 0.2 — Android secure surface
@@ -15,58 +23,72 @@
 - no system IME for secure input
 - no standard text widget for sensitive composition
 - custom glyph geometry renderer
-- clipboard and autofill disabled on the secure surface
+- sensitive receive surface using the same renderer boundary
+- local contact color/shape/pattern marker
+- visual render-epoch rotation
+- clipboard/autofill disabled on secure surfaces
 - screen-capture restrictions where supported
-- overlay and accessibility-risk handling
+- overlay/accessibility-risk handling
 
-## 0.3 — pseudonymous identity
+## 0.3 — identity and invitations
 
-- no required real names, phone numbers or usernames in the secure UI
-- random contact aliases with independent rotation
-- public identity-key fingerprint model
-- QR / out-of-band verification flow
-- pinned trust state
-- explicit `KeyChanged` state requiring re-verification
-- one-time invitation / rendezvous token design
+- real key generation and storage model
 - hardware-backed identity-key adapter
+- QR / out-of-band verification flow
+- one-time rendezvous invitation protocol
+- pinned trust persistence
+- explicit `KeyChanged` UX
+- visual marker bound to verified identity, never alias
 
 ## 0.4 — authenticated encrypted envelopes
 
-- authenticated session establishment
+- reviewed authenticated session establishment
 - forward-secret message ratchet
 - AEAD message envelopes
-- independent attachment/media keys
-- replay and ordering rules
+- independent media keys
+- replay/order rules
+- delivery-token derivation/binding from authenticated session state
 - interoperability test vectors
 
 ## 0.5 — privacy network
 
-- dedicated transport client; no embedded browser dependency
-- entry / transit / mailbox relay roles
-- split-knowledge metadata model
-- opaque mailbox tokens
-- relay rotation
-- optional encrypted tunnel or VPN to the entry relay
-- push notifications without message content
-- delivery and retry state
-- traffic-correlation limits documented and tested where measurable
+- dedicated transport client
+- live entry/transit/mailbox relay protocol
+- split-knowledge metadata enforcement
+- per-message/bounded-scope mailbox and routing token rotation
+- route rotation
+- optional encrypted tunnel/VPN to entry
+- opaque push wakeups
+- delivery/retry state
+- measured traffic-correlation analysis
 
-## 0.6 — private media path
+## 0.6 — maximum-privacy transport
+
+- size-class padding integrated into envelope transport
+- delivery-window batching
+- bounded randomized delay
+- latency/battery/bandwidth measurements
+- unlinkability tests for repeated delivery identifiers
+- explicit documentation of what a global passive observer can still correlate
+
+This phase targets reduced linkability, not guaranteed anonymity.
+
+## 0.7 — private media path
 
 - image decode to pixel buffer
 - metadata-free canonical re-encode
-- normalized voice-message capture and Opus encoding
-- encrypted chunk transfer with independent media keys
+- normalized voice capture and Opus encoding
+- authenticated encrypted chunk transfer
 - bounded decoder resources
 - protected local media cache
-- no automatic export to gallery or shared storage
+- no automatic gallery/shared-storage export
 - explicit user-controlled export
 
 ## Later
 
-- multi-device identity and session model
-- group messaging using a reviewed group protocol such as MLS
-- isolated link viewer, separate from the secure messaging trust domain
+- multi-device identity/session model
+- group messaging with a reviewed protocol such as MLS
+- isolated link viewer outside the secure trust domain
 - hardened Android deployment profile
 - independent security review
 
