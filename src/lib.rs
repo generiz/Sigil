@@ -11,7 +11,9 @@ pub mod visual;
 pub mod wasm_demo;
 
 pub use composer::{ComposerError, EphemeralToken, LayoutSession, SensitiveBuffer, SymbolId};
-pub use crypto::{CryptoError, LayeredEnvelope, MessageSecret, TransportSecret};
+pub use crypto::{
+    CryptoError, LayeredEnvelope, MessageSecret, ReplayGuard, TransportSecret,
+};
 pub use fragmentation::{
     FragmentBundle, FragmentCapability, FragmentError, FragmentManifest, FragmentPolicy,
     OpaqueFragment,
