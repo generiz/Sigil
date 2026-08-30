@@ -64,7 +64,7 @@ impl SecureSymbolStream {
     }
 
     pub fn from_encoded(bytes: Vec<u8>) -> Result<Self, SymbolStreamError> {
-        if bytes.len() % SYMBOL_CODE_LEN != 0 {
+        if !bytes.len().is_multiple_of(SYMBOL_CODE_LEN) {
             return Err(SymbolStreamError::MalformedStream);
         }
         Ok(Self { bytes })
