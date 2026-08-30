@@ -7,6 +7,9 @@ pub mod network;
 pub mod symbol_stream;
 pub mod visual;
 
+#[cfg(target_arch = "wasm32")]
+pub mod wasm_demo;
+
 pub use composer::{ComposerError, EphemeralToken, LayoutSession, SensitiveBuffer, SymbolId};
 pub use crypto::{CryptoError, LayeredEnvelope, MessageSecret, TransportSecret};
 pub use fragmentation::{
