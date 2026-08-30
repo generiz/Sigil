@@ -1,8 +1,8 @@
 use blake3::keyed_hash;
 use rand::{rngs::OsRng, RngCore};
+use std::fmt;
 use zeroize::Zeroize;
 
-#[derive(Debug)]
 pub struct LocalVisualSecret([u8; 32]);
 
 impl LocalVisualSecret {
@@ -12,8 +12,14 @@ impl LocalVisualSecret {
         Self(bytes)
     }
 
-    pub fn as_bytes(&self) -> &[u8; 32] {
+    fn as_bytes(&self) -> &[u8; 32] {
         &self.0
+    }
+}
+
+impl fmt::Debug for LocalVisualSecret {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("LocalVisualSecret([REDACTED])")
     }
 }
 
@@ -46,10 +52,18 @@ impl ContactVisualMarker {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct VisualEpochId([u8; 16]);
 
-#[derive(Debug)]
 pub struct VisualRenderEpoch {
     id: VisualEpochId,
     render_token: [u8; 32],
+}
+
+impl fmt::Debug for VisualRenderEpoch {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("VisualRenderEpoch")
+            .field("id", &self.id)
+            .field("render_token", &"[REDACTED]")
+            .finish()
+    }
 }
 
 impl VisualRenderEpoch {
@@ -69,7 +83,7 @@ impl VisualRenderEpoch {
         self.id
     }
 
-    pub fn render_token(&self) -> &[u8; 32] {
+    pub(crate) fn render_token(&self) -> &[u8; 32] {
         &self.render_token
     }
 }
@@ -108,5 +122,13 @@ mod tests {
         let second = VisualRenderEpoch::fresh();
         assert_ne!(first.id(), second.id());
         assert_ne!(first.render_token(), second.render_token());
+    }
+
+    #[test]
+    fn visual_secret_debug_output_is_redacted() {
+        let secret = LocalVisualSecret::random();
+        let epoch = VisualRenderEpoch::fresh();
+        assert!(format!("{secret:?}").contains("REDACTED"));
+        assert!(format!("{epoch:?}").contains("REDACTED"));
     }
 }
