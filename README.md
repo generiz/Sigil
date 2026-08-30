@@ -1,10 +1,12 @@
 # Sigil
 
-Secure mobile messaging research focused on minimizing plaintext exposure, separating visible identity from cryptographic identity, and keeping network identifiers short-lived.
+**Status: research prototype. Sigil is not a production messenger.**
+
+Sigil is secure-messaging research focused on minimizing plaintext exposure, separating visible identity from cryptographic identity, and keeping network identifiers short-lived.
+
+A browser demonstrator is available at https://nicolaspintos.com/sigil/. The Rust/WebAssembly core performs the symbol pipeline, layered authenticated encryption and Reed-Solomon recovery. The node topology shown in the demo is explicitly simulated.
 
 Sigil does not use the operating system's normal text model as the intended sensitive-data path. Input, symbol representation, cryptography, identity, visual presentation, media handling and network transport are separate trust domains.
-
-**Stable to the human, ephemeral to the network.**
 
 ## Message representation
 
@@ -102,7 +104,7 @@ independent encrypted pieces
   `-- ...
 ```
 
-`Maximum` is the default privacy policy target and enables token rotation, size-class padding, route rotation, batching and bounded-delay targets at the policy level. Live nodes, live mix scheduling and retrieval are not implemented yet.
+`Maximum` is the default privacy-policy target and enables token rotation, size-class padding, route rotation, batching and bounded-delay targets at the policy level. Live nodes, live mix scheduling and retrieval are not implemented yet.
 
 Multiple nodes and fragment dispersal reduce concentration of encrypted state; they do not make traffic impossible to trace or defeat a global observer by definition.
 
