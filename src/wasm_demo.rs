@@ -189,6 +189,64 @@ impl DemoSession {
 
         serde_json::to_string(&result).map_err(js_error)
     }
+
+    /// Returns one authenticated receiver SymbolId for the visual renderer.
+    ///
+    /// This is intentionally separate from the public JSON result. Same-origin JavaScript can
+    /// observe any symbol it requests, so this bridge is a visualization API, not a browser
+    /// confidentiality boundary. A return value of 0 means reconstruction/authentication did not
+    /// complete for the supplied fragment set.
+    pub fn receiver_symbol_at(
+        &self,
+        index: usize,
+        missing_slots_csv: &str,
+    ) -> Result<u16, JsValue> {
+        let total = self.bundle.manifest().total_fragments();
+        let required = self.bundle.manifest().required_fragments();
+        let missing = parse_missing_slots(missing_slots_csv, total)?;
+        let available = self
+            .bundle
+            .fragments()
+            .iter()
+            .enumerate()
+            .filter(|(fragment_index, _)| !missing.contains(&(fragment_index + 1)))
+            .map(|(_, fragment)| fragment.clone())
+            .collect::<Vec<_>>();
+
+        if available.len() < required {
+            return Ok(0);
+        }
+
+        let reconstructed = match self.bundle.manifest().reconstruct(&available) {
+            Ok(value) => value,
+            Err(_) => return Ok(0),
+        };
+        if reconstructed != self.wire {
+            return Ok(0);
+        }
+
+        let received = match LayeredEnvelope::from_wire_bytes(&reconstructed) {
+            Ok(value) => value,
+            Err(_) => return Ok(0),
+        };
+        let opened = match received.open(
+            &self.message_secret,
+            &self.transport_secret,
+            &self.application_aad,
+            TRANSPORT_AAD,
+        ) {
+            Ok(value) => value,
+            Err(_) => return Ok(0),
+        };
+
+        let stream = SecureSymbolStream::from_encoded(opened).map_err(js_error)?;
+        let symbol_key = SymbolMapKey::from_message_secret(&self.message_secret);
+        let alphabet = (1u16..=256u16).map(SymbolId).collect::<Vec<_>>();
+        let symbol = stream
+            .decode_symbol_at(index, &alphabet, &symbol_key)
+            .map_err(js_error)?;
+        Ok(symbol.0)
+    }
 }
 
 #[wasm_bindgen]
