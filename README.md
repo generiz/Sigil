@@ -4,7 +4,9 @@
 
 Sigil is secure-messaging research focused on minimizing plaintext exposure, separating visible identity from cryptographic identity, and keeping network identifiers short-lived.
 
-A browser demonstrator is available at https://nicolaspintos.com/sigil/. The Rust/WebAssembly core performs the symbol pipeline, layered authenticated encryption and Reed-Solomon recovery. The node topology shown in the demo is explicitly simulated.
+A browser demonstrator is available at https://nicolaspintos.com/sigil/. It is a **single-process loopback demonstrator**, not a confidential two-party messenger. The Rust/WebAssembly core performs the symbol pipeline, layered authenticated encryption and Reed-Solomon recovery; the node topology shown in the demo is explicitly simulated.
+
+The browser origin already owns the input bytes. The current public demo JSON returns only the outer-wire digest, fragment counts, reconstruction/authentication booleans and version. It does not return input bytes, receiver plaintext, decoded symbols, fragment capabilities or payload digests.
 
 Sigil does not use the operating system's normal text model as the intended sensitive-data path. Input, symbol representation, cryptography, identity, visual presentation, media handling and network transport are separate trust domains.
 
@@ -22,7 +24,7 @@ message-scoped opaque symbol code
 SecureSymbolStream
 ```
 
-`SecureSymbolStream` is binary. It does not require Unicode, `String`, an IME or a standard text widget. The receiver can resolve one `SymbolId` at a time for custom glyph rendering without first materializing the whole message as operating-system text.
+`SecureSymbolStream` is binary. It does not require Unicode, `String`, an IME or a standard text widget. A future native receiver can resolve one `SymbolId` at a time for custom glyph rendering without first materializing the whole message as operating-system text.
 
 The symbol map is not encryption. Confidentiality comes from authenticated encryption.
 
@@ -48,6 +50,8 @@ Both layers use fresh nonces and authenticated associated data. The inner nonce 
 
 Secret wrapper types zeroize their backing bytes on drop and use redacted debug formatting. The wire parser also rejects malformed or oversized message envelopes before deeper processing.
 
+The browser demo now binds its application AAD to an ordered sender/receiver identity context. This proves context binding only: it is **not** a signature, authenticated key exchange or proof that either identity was obtained securely.
+
 This is not a ratchet yet. Authenticated key exchange, forward secrecy and ratchet advancement remain protocol work.
 
 See `docs/CRYPTO_PIPELINE.md`.
@@ -56,11 +60,11 @@ See `docs/CRYPTO_PIPELINE.md`.
 
 The core includes a bounded in-memory `ReplayGuard` for exact authenticated envelope replays. A wire envelope is added to replay state only after successful authentication; an exact replay inside the configured window is rejected.
 
-This is a hardening primitive, not the final session protocol. Persistent/session message numbering, ordering semantics and ratchet-integrated replay protection remain future work.
+This is a hardening primitive, not the final session protocol. The browser demonstrator intentionally does not use `ReplayGuard` because it re-evaluates the same envelope when the user chooses **Ver paso a paso**. Persistent/session message numbering, ordering semantics and ratchet-integrated replay protection remain future work.
 
 ## Encrypted fragment layer
 
-Sigil 0.3 can encode the already encrypted wire envelope into redundant opaque pieces.
+Sigil can encode the already encrypted wire envelope into redundant opaque pieces.
 
 ```text
 outer authenticated wire envelope
@@ -78,7 +82,7 @@ The default policy creates **20 fragments: 12 data + 8 parity**. Any valid 12 ar
 
 Each network-facing piece has its own random 256-bit capability and opaque bytes. It does not expose its coding index, recipient name, contact alias or a permanent message identifier. The capability-to-index map stays in an endpoint `FragmentManifest`.
 
-Reed-Solomon provides resilience, not encryption. The reconstructed object must still pass outer XChaCha20-Poly1305 authentication before any inner message state is exposed.
+Reed-Solomon provides resilience, not encryption. The reconstructed object must still pass outer XChaCha20-Poly1305 authentication before any inner message state is accepted.
 
 See `docs/FRAGMENTATION.md`.
 
@@ -86,9 +90,9 @@ See `docs/FRAGMENTATION.md`.
 
 The secure UI does not require a real name, phone number or global username.
 
-A contact may appear only as a local random alias or visual marker. Trust is pinned to cryptographic identity material verified out-of-band with a fingerprint or QR representation. If the verified identity key changes, the contact enters `KeyChanged` and must be verified again.
+A contact may appear only as a local random alias or visual marker. Trust can be pinned to cryptographic identity material verified out-of-band with a fingerprint or QR representation. If the verified identity key changes, the contact enters `KeyChanged` and must be verified again.
 
-A color, alias or shape never authenticates a person.
+The current identity model does **not** sign envelopes and is not yet connected to an authenticated session establishment protocol. A color, alias or shape never authenticates a person.
 
 See `docs/IDENTITY.md` and `docs/VISUAL_LAYER.md`.
 
@@ -98,21 +102,7 @@ The network model does not require a permanent mailbox identifier.
 
 A delivery epoch contains fresh message, delivery and routing tokens. The node pool supports 2 to 1000 distinct nodes.
 
-Fragment placement spreads pieces across the pool. With enough available nodes, each piece in a distribution round receives a different target. Small pools are reused in shuffled balanced passes.
-
-```text
-client
-  |
-entry / transit path
-  |
-independent encrypted pieces
-  |-- store node A
-  |-- store node B
-  |-- store node C
-  `-- ...
-```
-
-`Maximum` is the default privacy-policy target and enables token rotation, size-class padding, route rotation, batching and bounded-delay targets at the policy level. Live nodes, live mix scheduling and retrieval are not implemented yet.
+Fragment placement spreads pieces across the pool. Live nodes, live mix scheduling, upload and retrieval are not implemented yet. The browser demo's nodes are a topology simulation; removing a simulated node changes which fragment slots are supplied to the real reconstruction core.
 
 Multiple nodes and fragment dispersal reduce concentration of encrypted state; they do not make traffic impossible to trace or defeat a global observer by definition.
 
@@ -124,17 +114,23 @@ Images are intended to be decoded to pixels, reconstructed without source EXIF/X
 
 Voice messages are intended to move from microphone samples to normalized audio frames and encrypted chunks without requiring a long-lived plaintext recording first.
 
-Received media stays inside Sigil's protected path unless the user explicitly exports it.
+These media paths are architectural direction; live media codecs and transfer are not implemented.
 
 See `docs/MEDIA.md`.
 
 ## Security boundary
 
-Sigil does not claim that plaintext can never exist, keylogging is impossible, a compromised endpoint remains confidential, or traffic is impossible to trace.
+Secrets are ephemeral session objects generated inside the process. There is no passphrase to guess. `MessageSecret` and `TransportSecret` are random 32-byte session objects; their AEAD subkeys are derived with domain-separated BLAKE3 keyed hashing.
 
-A capable targeted adversary may combine telecom visibility, compromised infrastructure, endpoint exploits, seized devices, account compromise, supply-chain access and traffic correlation. Sigil does not claim that a specific government, intelligence service or law-enforcement body cannot investigate or compromise a user.
+An attacker who only obtains network fragments does not obtain plaintext from those fragments. An attacker who can read the running process or WebAssembly memory during a live `DemoSession` may recover `MessageSecret` and `TransportSecret`. The browser origin also already owns the input bytes before WASM receives them.
 
-If the user can see a glyph, color, image or message, the device necessarily contains enough information at some stage to render those pixels. The goal is to minimize semantic plaintext lifetime and avoid unnecessary OS text surfaces.
+Identity context is now included in the browser demo's application AAD, so changing the bound sender/receiver context causes authentication failure. That does not authenticate how those identities were learned. There is still no authenticated key exchange, no signature binding identity to a negotiated session and no production secret-distribution mechanism. Secret distribution is therefore a primary attack surface for any future two-party build.
+
+The web demo is loopback: one process creates both secrets, seals, fragments, reconstructs and opens the same envelope. It must not be described as a confidential two-party messenger. Its public JSON intentionally does not export reconstructed plaintext.
+
+The build origin is also part of the boundary. Compromising the JavaScript, WebAssembly artifact, hosting origin, browser extension environment or build/release path may be cheaper than attacking XChaCha20-Poly1305. `Cargo.lock`, CI and advisory scanning reduce avoidable supply-chain risk but do not prove that a browser received an independently verified binary.
+
+Sigil does not claim that plaintext can never exist, keylogging is impossible, a compromised endpoint remains confidential, traffic is impossible to trace, or a particular government/intelligence service cannot investigate a user.
 
 See `SECURITY.md`, `docs/THREAT_MODEL.md` and `docs/STATE_LEVEL_THREAT_MODEL.md`.
 
@@ -144,9 +140,10 @@ Implemented in the Rust core:
 
 - randomized secure-composition primitives
 - message-scoped binary symbol codes
-- `SecureSymbolStream` with symbol-by-symbol decode
+- `SecureSymbolStream` with symbol-by-symbol decode primitives
 - layered XChaCha20-Poly1305 authenticated encryption
-- independent message and transport secrets
+- independent random message and transport secrets
+- identity-context application AAD helper
 - secret zeroization and redacted debug formatting
 - bounded wire-envelope parsing
 - bounded exact-envelope replay rejection after successful authentication
@@ -156,7 +153,7 @@ Implemented in the Rust core:
 - recovery with missing pieces
 - BLAKE3 reconstruction consistency check before AEAD verification
 - fragment target spreading across node pools from 2 to 1000 nodes
-- end-to-end binary pipeline test through encryption, piece loss, reconstruction and symbol decode
+- end-to-end binary pipeline tests through encryption, piece loss and reconstruction
 - pseudonymous contact/trust-state models
 - identity fingerprints
 - ephemeral delivery/message/routing tokens
@@ -169,7 +166,9 @@ Implemented in the Rust core:
 
 Not implemented yet:
 
-- authenticated key exchange and forward-secret message ratchet
+- authenticated key exchange / secret distribution between two endpoints
+- identity signatures bound to session establishment
+- forward-secret message ratchet
 - persistent/session replay numbering and ordering semantics
 - hardware-backed production key storage
 - Android secure input/rendering surface

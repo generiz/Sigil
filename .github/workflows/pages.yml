@@ -40,8 +40,6 @@ jobs:
       - name: Assemble demo
         run: |
           cp web-demo/index.html dist/index.html
-          cp web-demo/styles.css dist/styles.css
-          cp web-demo/app.js dist/app.js
           cp web-demo/embed.js dist/embed.js
           touch dist/.nojekyll
           test -s dist/pkg/sigil_core_bg.wasm

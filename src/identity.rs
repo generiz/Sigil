@@ -41,6 +41,24 @@ impl IdentityFingerprint {
     }
 }
 
+/// Builds application associated data that binds an envelope to an ordered identity context.
+///
+/// This is context binding only. It does not authenticate how either identity key was obtained,
+/// does not perform a key exchange, and is not a signature scheme.
+pub fn build_identity_bound_application_aad(
+    sender: &IdentityPublicKey,
+    receiver: &IdentityPublicKey,
+) -> Vec<u8> {
+    const LABEL: &[u8] = b"sigil.application.identity-bound.v1";
+    let sender_fingerprint = sender.fingerprint();
+    let receiver_fingerprint = receiver.fingerprint();
+    let mut aad = Vec::with_capacity(LABEL.len() + 64);
+    aad.extend_from_slice(LABEL);
+    aad.extend_from_slice(sender_fingerprint.as_bytes());
+    aad.extend_from_slice(receiver_fingerprint.as_bytes());
+    aad
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ContactAlias([u8; 8]);
 
@@ -138,6 +156,7 @@ impl ContactRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{CryptoError, LayeredEnvelope, MessageSecret, TransportSecret};
 
     fn key(byte: u8) -> IdentityPublicKey {
         IdentityPublicKey::new([byte; 32])
@@ -177,5 +196,44 @@ mod tests {
         assert!(!contact.verify_observed_fingerprint(key(1).fingerprint()));
         assert!(contact.verify_observed_fingerprint(key(2).fingerprint()));
         assert_eq!(contact.trust(), TrustState::Verified);
+    }
+
+    #[test]
+    fn identity_bound_aad_rejects_a_different_receiver_context() {
+        let sender = key(1);
+        let receiver_a = key(2);
+        let receiver_b = key(3);
+        let aad_a = build_identity_bound_application_aad(&sender, &receiver_a);
+        let aad_b = build_identity_bound_application_aad(&sender, &receiver_b);
+        let message_secret = MessageSecret::random();
+        let transport_secret = TransportSecret::random();
+        let envelope = LayeredEnvelope::seal(
+            &[4, 8, 15, 16, 23, 42],
+            &message_secret,
+            &transport_secret,
+            &aad_a,
+            b"transport-context",
+        )
+        .unwrap();
+
+        assert_eq!(
+            envelope.open(
+                &message_secret,
+                &transport_secret,
+                &aad_b,
+                b"transport-context",
+            ),
+            Err(CryptoError::AuthenticationFailed)
+        );
+    }
+
+    #[test]
+    fn identity_bound_aad_is_role_ordered() {
+        let alice = key(4);
+        let bob = key(5);
+        assert_ne!(
+            build_identity_bound_application_aad(&alice, &bob),
+            build_identity_bound_application_aad(&bob, &alice)
+        );
     }
 }
