@@ -7,12 +7,18 @@ use zeroize::Zeroize;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct SymbolId(pub u16);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct EphemeralToken(u64);
 
 impl EphemeralToken {
     pub fn expose(self) -> u64 {
         self.0
+    }
+}
+
+impl fmt::Debug for EphemeralToken {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("EphemeralToken([REDACTED])")
     }
 }
 
@@ -35,10 +41,18 @@ impl fmt::Display for ComposerError {
 
 impl Error for ComposerError {}
 
-#[derive(Debug)]
 pub struct LayoutSession {
     slots: Vec<SymbolId>,
     tokens: Vec<(SymbolId, EphemeralToken)>,
+}
+
+impl fmt::Debug for LayoutSession {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LayoutSession")
+            .field("slot_count", &self.slots.len())
+            .field("tokens", &"[REDACTED]")
+            .finish()
+    }
 }
 
 impl LayoutSession {
@@ -107,9 +121,18 @@ impl Drop for LayoutSession {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct SensitiveBuffer {
     tokens: Vec<u64>,
+}
+
+impl fmt::Debug for SensitiveBuffer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SensitiveBuffer")
+            .field("len", &self.tokens.len())
+            .field("tokens", &"[REDACTED]")
+            .finish()
+    }
 }
 
 impl SensitiveBuffer {
@@ -203,5 +226,18 @@ mod tests {
         assert_eq!(buffer.len(), 2);
         buffer.clear();
         assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn secure_composer_debug_output_is_redacted() {
+        let session = LayoutSession::new(&alphabet()).unwrap();
+        let token = session.token_for_slot(0).unwrap();
+        let mut buffer = SensitiveBuffer::default();
+        buffer.push(token);
+
+        assert!(format!("{token:?}").contains("REDACTED"));
+        assert!(format!("{session:?}").contains("REDACTED"));
+        assert!(format!("{buffer:?}").contains("REDACTED"));
+        assert!(!format!("{token:?}").contains(&token.expose().to_string()));
     }
 }
