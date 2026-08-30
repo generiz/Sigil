@@ -1,60 +1,90 @@
 # Sigil
 
-Secure mobile messaging research focused on reducing plaintext exposure, minimizing metadata and separating visible identity from cryptographic identity.
+Secure mobile messaging research focused on minimizing plaintext exposure, separating visible identity from cryptographic identity, and keeping network identifiers short-lived.
 
-Sigil treats secure input, identity, encryption, visual presentation, media handling and network privacy as separate layers. None is presented as a substitute for the others.
-
-## Core idea
-
-The secure composer avoids the normal operating-system text path: no system IME, no standard text field, no clipboard/autofill integration for sensitive composition, randomized key placement, ephemeral symbol mappings and custom rendering.
-
-The receive side follows the same principle. A contact can remain visually recognizable to the human while protocol and delivery identifiers rotate underneath it.
+Sigil does not use the operating system's normal text model as the intended sensitive-data path. The design treats input, symbol representation, cryptography, identity, visual presentation, media handling and network transport as separate trust domains.
 
 **Stable to the human, ephemeral to the network.**
 
-A local contact marker may be a simple color/shape/pattern, for example a green dot. That marker is derived locally from verified identity material and a device-local visual secret. It is not sent as a network identity and has no authentication authority by itself.
+## Message representation
 
-Each visual render epoch uses fresh internal state. This does not hide final pixels from a compromised OS/GPU; it avoids designing stable application-level visual identifiers where they are unnecessary.
+The secure path is designed around internal symbol identifiers rather than OS text strings.
 
-See `docs/VISUAL_LAYER.md`.
+```text
+Touch
+  |
+randomized key slot
+  |
+SymbolId
+  |
+message-scoped opaque symbol code
+  |
+SecureSymbolStream
+```
+
+`SecureSymbolStream` is binary. It does not require Unicode, `String`, an IME or a standard text widget. A receiver with the same message-scoped symbol-map key can resolve one symbol at a time for custom glyph rendering without first materializing the whole message as operating-system text.
+
+The symbol map is not encryption. Its purpose is to avoid a stable character representation inside the sensitive path. Confidentiality comes from authenticated encryption.
+
+## Layered encryption
+
+The Rust core now includes a layered authenticated-encryption primitive using XChaCha20-Poly1305.
+
+```text
+SecureSymbolStream
+      |
+inner XChaCha20-Poly1305
+      |  message secret
+      v
+inner ciphertext
+      |
+outer XChaCha20-Poly1305
+      |  independent transport secret
+      v
+wire envelope
+```
+
+The inner and outer layers use independently derived keys and fresh nonces. The inner nonce and inner ciphertext are themselves protected by the outer layer.
+
+This is not a ratchet yet. `MessageSecret` and `TransportSecret` are core primitives; authenticated session establishment, forward secrecy and ratchet advancement remain separate protocol work.
 
 ## Identity without names
 
-The secure UI does not require real names, phone numbers or global usernames. Random aliases are presentation only.
+The secure UI does not require a real name, phone number or global username.
 
-Trust is pinned to cryptographic identity material and verified out-of-band with a fingerprint or QR representation. If a verified key changes, trust becomes `KeyChanged` and requires a new verification decision.
+A contact may appear only as a local random alias or visual marker. Trust is pinned to cryptographic identity material verified out-of-band with a fingerprint or QR representation. If the verified identity key changes, the contact enters `KeyChanged` and must be verified again.
 
-The important invariant is not "this contact is named Marcelo". It is "this is the same cryptographic identity I verified before".
+A color, alias or shape never authenticates a person.
 
-See `docs/IDENTITY.md`.
+See `docs/IDENTITY.md` and `docs/VISUAL_LAYER.md`.
 
-## Ephemeral delivery
+## Ephemeral network state
 
-The privacy-network target is split-knowledge delivery:
+The network model no longer requires a permanent mailbox identifier.
+
+A delivery epoch contains fresh message, delivery and routing tokens. The node pool can model between 2 and 1000 distinct nodes, while an individual route selects only the nodes needed for that delivery.
 
 ```text
-Device
+client
   |
-optional encrypted tunnel / VPN
+entry node
   |
-Entry relay
+zero or more transit nodes
   |
-Transit relay
-  |
-Opaque mailbox relay
+store/delivery node
 ```
 
-A delivery epoch has fresh opaque message, routing and mailbox tokens. The protocol direction is to rotate these at message boundaries rather than expose a stable username or mailbox address.
+The entry role may observe the source connection but is not designed to receive the delivery token. A store role may observe an opaque delivery token but is not designed to receive the original client address, peer identity or plaintext.
 
-Traffic-size classes are modeled so exact small-message length does not need to be exposed. The maximum-privacy design target additionally allows route rotation, batching and bounded randomized delivery delay, accepting higher latency and bandwidth cost.
+`Maximum` is the default privacy policy target and enables token rotation, size-class padding, route rotation, batching and bounded-delay targets at the policy level. Live mix scheduling and live distributed transport are not implemented yet.
 
-These measures reduce linkability. They do not guarantee anonymity against a global observer capable of correlating both ends of traffic.
+A future distributed-delivery phase may encode an already encrypted wire envelope into redundant pieces and place those pieces through independent routes. Fragmentation must happen after authenticated encryption, never on plaintext. Such coding improves resilience and may reduce metadata concentration, but it is not itself encryption or an anonymity proof.
 
 See `docs/PRIVACY_NETWORK.md`.
 
 ## Photos and audio
 
-Images are intended to be decoded to pixels, reconstructed without source EXIF/XMP/container metadata, chunked and encrypted with an independent media key.
+Images are intended to be decoded to pixels, reconstructed without source EXIF/XMP/container metadata, then encrypted before transport.
 
 Voice messages are intended to move from microphone samples to normalized audio frames and encrypted chunks without requiring a long-lived plaintext recording first.
 
@@ -64,27 +94,43 @@ See `docs/MEDIA.md`.
 
 ## Security boundary
 
-Sigil does not claim that plaintext can never exist, that a compromised endpoint remains confidential, or that an IP address becomes impossible to trace.
+Sigil does not claim that plaintext can never exist, keylogging is impossible, a compromised endpoint remains confidential, or traffic is impossible to trace.
 
-If the user can see a color, glyph, image or message, the device necessarily produces enough final display information to render it. Endpoint hardening reduces avoidable exposure; end-to-end cryptography protects message content; privacy routing reduces metadata concentration.
+If the user can see a glyph, color, image or message, the device necessarily contains enough information at some stage to render those pixels. The goal is to minimize semantic plaintext lifetime and avoid unnecessary OS text surfaces, not to deny that physical rendering exists.
+
+Likewise, multiple relays, rotating tokens, padding or future fragment dispersal can reduce metadata concentration and simple linkability. They do not defeat a sufficiently capable global observer by definition.
 
 ## Current implementation
 
-The Rust core currently contains:
+Implemented in the Rust core:
 
 - randomized secure-composition primitives
-- ephemeral symbol tokens and explicit buffer clearing
-- pseudonymous contact and trust-state models
+- session-scoped input tokens and explicit buffer clearing
+- message-scoped binary symbol codes
+- `SecureSymbolStream` with symbol-by-symbol decode
+- layered XChaCha20-Poly1305 authenticated encryption
+- independent message and transport secrets
+- pseudonymous contact/trust-state models
 - identity fingerprints
-- media normalization/chunk planning contracts
-- split-knowledge relay visibility contracts
-- fresh delivery-epoch, routing and mailbox tokens
+- media normalization/chunk-planning contracts
+- ephemeral delivery/message/routing tokens
+- node-pool model from 2 to 1000 nodes
+- route selection with distinct nodes
 - traffic-size classes and privacy-policy targets
 - local visual marker derivation
 - ephemeral visual render epochs
+- cross-platform Rust CI
 
-Authenticated session establishment, a reviewed ratchet, AEAD message envelopes, Android UI/GPU rendering, live relays, batching/delay transport and real media codecs are not implemented yet.
+Not implemented yet:
 
-Features are only considered implemented when code, tests and documentation agree.
+- authenticated key exchange
+- forward-secret message ratchet
+- hardware-backed production key storage
+- Android secure input/rendering surface
+- live distributed nodes or mix scheduling
+- redundant fragment dispersal/recovery
+- live media codecs and media encryption pipeline
+
+Features are considered implemented only when code, tests and documentation agree.
 
 See `docs/ARCHITECTURE.md`, `docs/THREAT_MODEL.md` and `docs/ROADMAP.md`.
