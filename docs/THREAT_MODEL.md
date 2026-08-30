@@ -1,6 +1,6 @@
 # Threat model
 
-Sigil aims to reduce avoidable plaintext exposure and metadata while keeping endpoint hardening, identity verification, symbol representation, visual presentation, transport privacy and end-to-end cryptography separate.
+Sigil aims to reduce avoidable plaintext exposure and metadata while keeping endpoint hardening, identity verification, symbol representation, visual presentation, fragment resilience, transport privacy and end-to-end cryptography separate.
 
 ## Designed to reduce
 
@@ -16,6 +16,8 @@ Sigil aims to reduce avoidable plaintext exposure and metadata while keeping end
 - stable recipient identifiers in delivery traffic
 - exact small-message length leakage where padding classes are used
 - one node role learning source network, peer identity and plaintext together
+- concentration of the full encrypted wire object on one storage node when fragment distribution is used
+- loss of the encrypted object when a bounded number of fragment nodes are unavailable
 - accidental forwarding of source image/audio container metadata
 
 ## Endpoint limits
@@ -50,9 +52,25 @@ The current core uses two XChaCha20-Poly1305 layers with independent secret doma
 
 Both layers authenticate their ciphertext and associated data.
 
-Double encryption is only useful because the keys belong to different trust boundaries. It must not be described as automatically "twice as secure".
+Double encryption is useful here because the keys belong to different trust boundaries. It must not be described as automatically "twice as secure".
 
 The current core does not yet provide authenticated key exchange, a Double Ratchet-equivalent session protocol, replay protection or production key lifecycle management. Random `MessageSecret` and `TransportSecret` values are primitives used to build and test the envelope boundary.
+
+## Fragment-layer adversaries
+
+The fragment layer operates only on the already authenticated outer wire envelope.
+
+The default 12-data + 8-parity policy can reconstruct the encrypted object from any valid 12 of 20 fragments. This protects availability against up to eight missing pieces.
+
+It does not automatically correct maliciously modified shards. Reed-Solomon is an erasure code, not a Byzantine fault-tolerance protocol.
+
+The endpoint manifest therefore checks a BLAKE3 digest after reconstruction, and the reconstructed wire object must still pass outer XChaCha20-Poly1305 authentication. Outer AEAD authentication remains the cryptographic authority.
+
+A network-facing fragment exposes a random capability and opaque payload, but not its coding index. The endpoint manifest links capabilities back to positions. That manifest is therefore linkability-sensitive and must remain endpoint-controlled or be protected/derived by authenticated session state in the live protocol.
+
+Fragment capabilities are locators, not identities and not substitutes for authenticated encryption.
+
+Compromise of enough storage nodes may still allow an adversary to collect enough encrypted pieces to reconstruct the outer ciphertext. That does not reveal plaintext without the cryptographic keys, but it may reveal volume, timing and piece relationships if the adversary also observes routing metadata.
 
 ## Visual adversaries
 
@@ -66,23 +84,13 @@ A copied color, shape or alias must never create trust. Trust comes only from ve
 
 Individual nodes may be curious or compromised.
 
-The model separates source-network visibility from final delivery-token visibility and plaintext. Delivery and routing tokens are intended to rotate rather than expose a permanent username or mailbox handle.
+The model separates source-network visibility from final delivery-token visibility and plaintext. Delivery, routing and fragment capabilities are intended to rotate rather than expose a permanent username or mailbox handle.
 
 This does not defeat a global passive observer. An observer monitoring both sides of routes may correlate timing, size, direction and volume. VPN use changes who sees the first hop; it does not eliminate traffic analysis.
 
 Size padding hides exact lengths within a class but not timing, direction or the existence of traffic. Batching and bounded randomized delay may reduce some timing correlation at a latency/battery cost, but they are not an anonymity proof.
 
 Sigil must not claim that an IP address is impossible to trace.
-
-## Future distributed-piece delivery
-
-A future redundancy/fragmentation layer may operate only on already authenticated ciphertext.
-
-It must not split plaintext and treat dispersion as confidentiality.
-
-Redundant pieces can improve resilience and reduce metadata concentration when different infrastructure handles different pieces, but they do not create cryptographic secrecy by themselves. Reconstruction metadata is sensitive because it can link pieces and must remain endpoint-controlled or be derived from authenticated session state.
-
-This layer is not implemented yet.
 
 ## Identity adversaries
 
@@ -106,7 +114,7 @@ Media decoders are parser attack surfaces and should be isolated and resource-bo
 
 ### Encryption remains separate
 
-Symbol indirection, random aliases, visual markers, token rotation, padding and future fragmentation are not substitutes for authenticated encryption.
+Symbol indirection, random aliases, visual markers, token rotation, padding and fragment dispersal are not substitutes for authenticated encryption.
 
 ### Encrypt before distributing
 
@@ -116,7 +124,7 @@ The required ordering is:
 semantic symbol state
   -> authenticated message encryption
   -> authenticated transport encryption
-  -> optional padding
+  -> optional traffic-size padding
   -> redundancy/fragmentation
   -> distributed transport
 ```
