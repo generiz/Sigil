@@ -48,6 +48,8 @@ jobs:
           test -s dist/pkg/sigil_core_bg.wasm
           test -s dist/pkg/sigil_core.js
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
