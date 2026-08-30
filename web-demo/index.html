@@ -7,6 +7,21 @@
   <meta name="description" content="Demostrador en vivo de Sigil: core Rust/WebAssembly real y simulación opcional de nodos.">
   <title>Sigil — Live Protocol Demo</title>
   <link rel="stylesheet" href="./styles.css">
+  <style>
+    .node-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-top:12px;border-top:1px solid var(--line)}
+    .endpoint-actions button.secondary{margin-top:0;background:#0b0f0c;color:#9aa69d;border-color:#39433c;font-size:10px;padding:11px 10px}
+    .endpoint-actions button.secondary:hover{border-color:#66746a;background:#101512}
+    .virtual-node{cursor:pointer;color:inherit}
+    .virtual-node:focus-visible{outline:2px solid #809487;outline-offset:2px}
+    .virtual-node.failed{background:#17110f;border-color:#6a4b45!important;opacity:.8}
+    .virtual-node.failed b{color:#b58c84}
+    .virtual-node.failed small{color:#9d7169}
+    .node-failure-state{grid-column:1/3;margin-top:3px;padding:9px 11px;border:1px solid #29312b;border-radius:8px;color:#78857c;background:#090d0a;font:600 8px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;text-transform:uppercase;letter-spacing:.08em}
+    .stage.failed{border-color:#5f4944;background:rgba(25,16,14,.76)}
+    .receiver-text.blocked{color:#9d7169;opacity:.8;font:700 18px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em}
+    .sim-packet.killed{background:#9d7169;opacity:.2}
+    @media(max-width:640px){.node-actions{grid-template-columns:1fr}.endpoint-actions button.secondary{min-height:42px}}
+  </style>
 </head>
 <body>
   <header class="topbar">
