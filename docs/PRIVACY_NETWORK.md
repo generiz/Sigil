@@ -13,7 +13,7 @@ The network model is designed so no single node role needs all of:
 - a permanent recipient identifier
 - plaintext content
 
-End-to-end encryption protects content. Ephemeral delivery state and role separation limit what individual infrastructure components are designed to learn.
+End-to-end encryption protects content. Ephemeral delivery state, fragment capabilities and role separation limit what individual infrastructure components are designed to learn.
 
 ## No permanent mailbox
 
@@ -27,29 +27,24 @@ DeliveryToken
 RoutingToken
 ```
 
-A `DeliveryToken` is not a username, account ID or human identity. It is bounded delivery state intended to rotate.
+These are bounded protocol values, not usernames or human identities.
 
-A future authenticated ratchet/session must derive or distribute these values safely so both endpoints advance without exposing a permanent network handle.
+A future authenticated ratchet/session must derive or distribute them safely so endpoints advance without exposing a permanent network handle.
 
 ## Node pool
 
-The current Rust model supports a pool containing 2 to 1000 distinct nodes.
+The Rust model supports a pool containing 2 to 1000 distinct nodes.
 
-An individual route selects only the nodes needed for that delivery:
+A route can select a distinct subset for one path. Fragment placement can additionally spread independent encrypted pieces across the pool.
+
+For a 20-piece default fragment set:
 
 ```text
-client
-  |
-entry
-  |
-zero or more transit nodes
-  |
-store/delivery
+100-node pool -> 20 distinct target nodes
+  2-node pool -> balanced shuffled reuse
 ```
 
-Routes contain distinct node IDs and can rotate independently between deliveries.
-
-This is a model and policy layer. There are no live Sigil nodes or deployed routing protocol in the repository yet.
+The current code models target selection only. Live route establishment, upload, retrieval and server behavior are not implemented yet.
 
 ## Node knowledge
 
@@ -67,9 +62,32 @@ It is not designed to require a human identity or application plaintext.
 
 ### Store/delivery
 
-May receive a short-lived opaque delivery token and encrypted transport object.
+May receive a short-lived capability and opaque encrypted fragment.
 
-It is not designed to require the original client network address, peer identity or plaintext.
+It is not designed to require the original client network address, peer identity, fragment coding index or plaintext.
+
+## Encrypted pieces
+
+Sigil 0.3 implements the endpoint coding model for distributed pieces.
+
+The ordering is fixed:
+
+```text
+inner AEAD
+  -> outer AEAD
+  -> optional traffic-size padding
+  -> Reed-Solomon coding
+  -> opaque fragments
+  -> node placement
+```
+
+The default set contains 20 fragments: 12 data and 8 parity. Any 12 valid pieces reconstruct the encrypted outer wire object.
+
+Each network-facing fragment carries a random 256-bit capability and opaque shard bytes. The capability-to-coding-index map remains in the endpoint manifest and is not needed by a store node.
+
+Reed-Solomon improves loss tolerance. It does not add confidentiality and does not by itself prevent traffic correlation.
+
+See `FRAGMENTATION.md`.
 
 ## Privacy policy
 
@@ -79,7 +97,7 @@ The core models three policy targets:
 - `Private`: adds size-class padding and route rotation targets
 - `Maximum`: adds batching and bounded-delay targets, accepting higher latency and bandwidth cost
 
-`Maximum` is the default policy target in the current core.
+`Maximum` is the default policy target.
 
 These are policy flags, not proof that a mix network exists.
 
@@ -87,16 +105,17 @@ These are policy flags, not proof that a mix network exists.
 
 Ciphertext size can reveal information.
 
-Sigil currently models size classes of 4 KiB, 16 KiB, 64 KiB and 256 KiB for small envelopes. Larger media uses its own chunking path.
+Sigil models size classes of 4 KiB, 16 KiB, 64 KiB and 256 KiB for small envelopes. Larger media uses its own chunking path.
 
-Padding hides exact length within a class but does not hide timing, direction or the fact that traffic exists.
+The fragment layer also adds random alignment bytes so the encrypted wire object fits an exact number of data shards. Alignment padding is not a substitute for size-class padding.
 
 ## Timing correlation
 
-An observer watching both sides of a route may correlate timing, direction, volume and bursts even when payload encryption is perfect.
+An observer watching both sides of routes may correlate timing, direction, volume and bursts even when payload encryption is perfect.
 
 Future transport experiments may evaluate:
 
+- independent route selection per fragment or bounded fragment groups
 - route rotation
 - batching into delivery windows
 - bounded randomized delay
@@ -105,26 +124,6 @@ Future transport experiments may evaluate:
 These techniques trade latency, bandwidth and battery for reduced simple linkability. They do not guarantee anonymity against a sufficiently capable global observer.
 
 Sigil does not claim that an IP address becomes impossible to trace.
-
-## Future encrypted-piece delivery
-
-A later phase may encode an already encrypted wire envelope into redundant pieces for resilient distributed storage/delivery.
-
-The required order is:
-
-```text
-inner authenticated encryption
-  -> outer authenticated encryption
-  -> optional padding
-  -> redundancy/fragmentation
-  -> node delivery
-```
-
-Fragmentation must never be treated as encryption.
-
-A piece should not require a human recipient name or permanent message identifier merely to be stored. Reconstruction state belongs at the authenticated endpoints or must be derived from authenticated session state.
-
-This phase is not implemented yet.
 
 ## VPN use
 
