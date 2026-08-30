@@ -29,7 +29,7 @@ jobs:
       - name: Install wasm-bindgen CLI
         run: cargo install wasm-bindgen-cli --version 0.2.100 --locked
       - name: Build Rust core for WebAssembly
-        run: cargo build --release --target wasm32-unknown-unknown
+        run: cargo build --locked --release --target wasm32-unknown-unknown
       - name: Generate browser bindings
         run: |
           mkdir -p dist/pkg
