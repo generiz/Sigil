@@ -2,9 +2,10 @@
 name = "sigil-core"
 version = "0.1.0"
 edition = "2021"
-description = "Endpoint-hardening primitives for secure mobile composition"
+description = "Core primitives for secure composition, pseudonymous identity and privacy-oriented messaging"
 license = "MIT"
 
 [dependencies]
+blake3 = "1.5"
 rand = "0.8"
 zeroize = "1.8"
