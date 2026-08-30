@@ -13,7 +13,7 @@ const MIN_PARITY_SHARDS: usize = 1;
 const MAX_TOTAL_SHARDS: usize = 255;
 const CAPABILITY_LEN: usize = 32;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct FragmentCapability([u8; CAPABILITY_LEN]);
 
 impl FragmentCapability {
@@ -23,8 +23,20 @@ impl FragmentCapability {
         Self(bytes)
     }
 
-    pub fn as_bytes(&self) -> &[u8; CAPABILITY_LEN] {
+    pub(crate) fn as_bytes(&self) -> &[u8; CAPABILITY_LEN] {
         &self.0
+    }
+}
+
+impl fmt::Debug for FragmentCapability {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("FragmentCapability([REDACTED])")
+    }
+}
+
+impl Drop for FragmentCapability {
+    fn drop(&mut self) {
+        self.0.zeroize();
     }
 }
 
@@ -71,10 +83,19 @@ impl Default for FragmentPolicy {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct OpaqueFragment {
     capability: FragmentCapability,
     payload: Vec<u8>,
+}
+
+impl fmt::Debug for OpaqueFragment {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OpaqueFragment")
+            .field("capability", &self.capability)
+            .field("payload_len", &self.payload.len())
+            .finish()
+    }
 }
 
 impl OpaqueFragment {
@@ -93,13 +114,25 @@ struct ManifestEntry {
     shard_index: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct FragmentManifest {
     original_len: usize,
     shard_len: usize,
     policy: FragmentPolicy,
     ciphertext_digest: [u8; 32],
     entries: Vec<ManifestEntry>,
+}
+
+impl fmt::Debug for FragmentManifest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FragmentManifest")
+            .field("original_len", &self.original_len)
+            .field("shard_len", &self.shard_len)
+            .field("policy", &self.policy)
+            .field("entry_count", &self.entries.len())
+            .field("ciphertext_digest", &"[REDACTED]")
+            .finish()
+    }
 }
 
 impl FragmentManifest {
@@ -357,5 +390,20 @@ mod tests {
             bundle.manifest().reconstruct(&bundle.fragments()[..4]),
             Err(FragmentError::InsufficientFragments)
         );
+    }
+
+    #[test]
+    fn fragment_debug_output_hides_capabilities_and_payload() {
+        let bundle =
+            FragmentBundle::split(&[5u8; 4096], FragmentPolicy::new(4, 2).unwrap()).unwrap();
+        let fragment = &bundle.fragments()[0];
+        let capability_bytes = format!("{:?}", fragment.capability().as_bytes());
+        let fragment_debug = format!("{fragment:?}");
+        let manifest_debug = format!("{:?}", bundle.manifest());
+
+        assert!(fragment_debug.contains("REDACTED"));
+        assert!(!fragment_debug.contains(&capability_bytes));
+        assert!(!fragment_debug.contains(&format!("{:?}", fragment.payload())));
+        assert!(manifest_debug.contains("REDACTED"));
     }
 }
