@@ -1,142 +1,200 @@
 # Architecture
 
-Sigil separates secure input, pseudonymous identity, cryptography, visual presentation, media handling and network transport into distinct trust domains.
+Sigil separates secure input, symbol representation, pseudonymous identity, cryptography, visual presentation, media handling and network transport into distinct trust domains.
 
 ## Message path
 
 ```text
 Touch surface
     |
-Secure composer
+randomized key slot
     |
-Ephemeral symbol layer
+SymbolId
     |
-Sensitive message representation
+message-scoped symbol code
     |
-Verified pseudonymous identity
+SecureSymbolStream
     |
-Authenticated encrypted envelope   [roadmap]
+inner authenticated encryption
     |
-Session ratchet                     [roadmap]
+outer authenticated transport envelope
     |
-Delivery epoch
+DeliveryEpoch
+    |-- fresh delivery token
     |-- fresh routing token
-    |-- fresh mailbox token
-    |-- traffic size class
     |
-Privacy network                     [live transport roadmap]
+node route
 ```
 
-Receive-side presentation is separate:
+The intended receive path is the inverse:
 
 ```text
-Encrypted envelope
+wire envelope
     |
-Authentication + ratchet            [roadmap]
+outer authentication/decryption
     |
-Verified identity
+inner authentication/decryption
     |
-Local visual marker
+SecureSymbolStream
     |
-Fresh visual render epoch
+decode one SymbolId at a time
     |
-Custom protected surface            [Android roadmap]
+custom glyph renderer
     |
-Pixels
+pixels
 ```
 
-The UI can therefore give a verified contact a stable local visual anchor, such as a color/shape marker, while transport identifiers and rendering state rotate independently.
+The receiver does not need to reconstruct a normal OS text string before rendering.
 
 ## Secure composition
 
-The sensitive composition surface does not rely on the normal Android text stack. Touch coordinates resolve to randomized key slots and session-scoped symbol tokens. Sensitive buffers are explicitly cleared where the language/platform permit.
+The sensitive composition surface does not rely on the normal Android text stack.
 
-The operating system still owns the touchscreen driver, compositor and scheduler. Avoiding IME/text widgets reduces voluntary exposure; it does not make a compromised kernel safe.
+Touch coordinates resolve to randomized key slots. Slots resolve to internal `SymbolId` values and short-lived input tokens. Clipboard, autofill, predictive text and a system IME are not part of the intended secure composition path.
 
-## Ephemeral symbol layer
+The operating system still owns the touchscreen driver, process scheduler and final display pipeline. Avoiding the OS text stack reduces voluntary exposure; it does not make a compromised kernel safe.
 
-Symbol tokens are short-lived endpoint-hardening state, not encryption. Message confidentiality must come from authenticated encryption and ratcheted keys.
+## Message-scoped symbol representation
+
+A symbol has no permanent transmitted code.
+
+`SymbolMapKey` is derived from message secret material. The same internal symbol therefore receives a different 128-bit opaque code when the message secret changes.
+
+`SecureSymbolStream` is a sequence of those binary codes. It has no Unicode or `String` requirement.
+
+The receiver can resolve individual symbol codes against the same message-scoped map and pass the resulting `SymbolId` directly to the custom glyph layer.
+
+This mapping is endpoint compartmentalization, not message encryption.
+
+## Cryptographic layers
+
+The current Rust core implements a two-layer authenticated envelope with XChaCha20-Poly1305.
+
+```text
+SecureSymbolStream
+        |
+        | MessageSecret
+        v
+inner XChaCha20-Poly1305
+        |
+        v
+version + inner nonce + inner ciphertext
+        |
+        | TransportSecret
+        v
+outer XChaCha20-Poly1305
+        |
+        v
+version + outer nonce + outer ciphertext
+```
+
+The inner and outer layers use independent secret domains and fresh nonces. The inner nonce is not exposed outside the outer authenticated envelope.
+
+The intended security roles are different:
+
+- inner layer: end-to-end message confidentiality/integrity
+- outer layer: independent transport protection
+
+This is not yet a full messaging protocol. Authenticated session establishment, forward secrecy, ratchet advancement, replay handling and key lifecycle rules remain roadmap work.
 
 ## Pseudonymous identity
 
-Human identity and protocol identity are separate. The secure UI does not require real names, phone numbers or global usernames.
+Human identity and protocol identity remain separate.
 
-Trust is pinned to public identity material. Fingerprint/QR verification happens over an independent channel. A key change transitions the contact to `KeyChanged`; aliases or visual markers cannot override that warning.
+The secure UI does not require real names, phone numbers or global usernames. Trust is pinned to verified cryptographic identity material. Fingerprint/QR verification happens through an independent channel.
+
+If a pinned identity key changes, the contact enters `KeyChanged`. A matching alias, color or visual marker cannot override that state.
 
 See `IDENTITY.md`.
 
 ## Ephemeral visual layer
 
-A verified contact may be represented locally by a minimal visual marker. The marker is derived from the verified identity key plus a device-local visual secret, so the UI does not need a server-side profile label to preserve local continuity.
+A verified contact may be represented locally by a minimal visual marker derived from the verified identity key plus a device-local visual secret.
 
-The render path also uses fresh visual epochs with short-lived render tokens. The intent is to avoid stable application-level mappings where they are unnecessary, not to claim that a compromised display stack cannot see final pixels.
+The human can therefore recognize a stable local marker while render tokens and network identifiers rotate independently.
 
-The final renderer may eventually use a custom GPU surface rather than standard text/color widgets for sensitive views. That Android implementation is not present yet.
+Fresh render epochs reduce stable application-level state. They do not hide final pixels from a compromised OS/GPU.
 
 See `VISUAL_LAYER.md`.
 
-## Cryptographic layer
+## Ephemeral delivery network
 
-Planned E2EE components are deliberately separate from symbol, visual and alias layers:
+Sigil no longer requires a permanent mailbox identifier in its core model.
 
-- authenticated device identity
-- forward-secret session establishment
-- ratcheted message keys
-- AEAD-protected envelopes
-- independent media keys
-- hardware-backed long-term key material where available
-
-No custom cipher is used for visual markers, aliases or symbol substitution.
-
-## Delivery epochs
-
-A network delivery should not require a permanent recipient username or stable mailbox identifier.
-
-The core models a fresh `DeliveryEpoch` containing independent random epoch, routing and mailbox tokens. The protocol target is to replace these at message boundaries or other tightly bounded scopes through authenticated ratchet/session state.
-
-Current random tokens are model primitives. They are not yet wired to a live cryptographic session or relay network.
-
-## Privacy network
-
-The design target is split-knowledge routing:
+A fresh `DeliveryEpoch` contains:
 
 ```text
-Client -> Entry relay -> Transit relay -> Mailbox relay
+MessageEpoch
+DeliveryToken
+RoutingToken
 ```
 
-The entry relay may see the source connection but should not know the peer identity or mailbox token. The mailbox relay may see an opaque mailbox token but should not know the original source address. No relay is designed to receive plaintext.
+These values are short-lived protocol state, not usernames.
 
-An optional VPN/encrypted tunnel can protect the local first hop, but VPN use alone is not anonymity.
+The node model supports a pool of 2 to 1000 distinct nodes. An individual route selects a distinct subset from that pool.
 
-Traffic-size classes can hide exact small-message lengths. Higher-privacy operation may later add route rotation, batching and bounded randomized delivery delays. These mechanisms trade latency/bandwidth for reduced linkability; they do not defeat a global observer by definition.
+```text
+client -> entry -> [transit ...] -> store/delivery
+```
+
+The role boundaries are designed so that:
+
+- entry can observe the incoming network connection but not the final delivery token
+- transit does not require peer identity or plaintext
+- store/delivery can handle an opaque delivery token without the original client address or plaintext
+
+The default policy target is `Maximum`, preferring token rotation, padding, route rotation, batching and bounded-delay targets over minimum latency.
+
+Live node transport, batching and delay scheduling are not implemented yet.
 
 See `PRIVACY_NETWORK.md`.
+
+## Future encrypted-piece delivery
+
+A future distributed-delivery layer may take the already authenticated outer wire envelope and encode it into redundant pieces for resilience across multiple routes/nodes.
+
+Ordering is mandatory:
+
+```text
+symbols
+  -> inner AEAD
+  -> outer AEAD
+  -> padding
+  -> redundancy/fragmentation
+  -> distributed delivery
+```
+
+Sigil must never split plaintext and treat fragmentation as confidentiality.
+
+The local endpoint would retain or derive the reconstruction metadata. Infrastructure should not require a permanent message identifier or human recipient label merely to hold a piece.
+
+This phase is not implemented yet and is not an anonymity guarantee.
 
 ## Media path
 
 ```text
-Image / microphone
+image / microphone
     |
-Media sanitizer
+controlled decoder/capture
     |
-Canonical pixels / audio frames
+canonical pixels / audio frames
     |
-Chunk planner
+media encryption
     |
-Independent media key               [crypto roadmap]
-    |
-Authenticated encrypted chunks      [crypto roadmap]
-    |
-Privacy network
+transport
 ```
 
-Images should be reconstructed from decoded pixels so source EXIF/XMP, thumbnails, filenames and container metadata are not forwarded by default. Voice messages should be encoded from normalized audio frames without requiring a long-lived plaintext file.
+Images should be reconstructed from decoded pixels so source EXIF/XMP, thumbnails, filenames and container metadata are not forwarded by default.
+
+Voice messages should be encoded from normalized audio frames without requiring a long-lived plaintext recording.
 
 See `MEDIA.md`.
 
 ## Browser boundary
 
-A general-purpose browser/WebView is not part of the secure messaging trust domain. Initial links open externally with explicit user action. Any future isolated viewer must not share conversation keys or sensitive buffers.
+A general-purpose browser/WebView is not part of the secure messaging trust domain. Initial links open externally with explicit user action.
+
+Any future isolated viewer must not share message secrets, transport secrets, symbol buffers or sensitive render state.
 
 ## Platform split
 
@@ -144,7 +202,7 @@ Expected direction:
 
 - Kotlin for Android lifecycle/platform integration
 - Rust for sensitive state machines and protocol logic
-- custom Android rendering surface for secure composition and sensitive receive views
+- custom Android rendering surface for secure input and receive views
 - hardware-backed key adapters where available
 - isolated media decoders/encoders where practical
 
