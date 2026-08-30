@@ -42,7 +42,7 @@ struct DemoResult {
     reconstruction_error: Option<String>,
     outer_authenticated: bool,
     inner_authenticated: bool,
-    receiver_text: Option<String>,
+    receiver_bytes: Option<Vec<u8>>,
     receiver_matches: bool,
 }
 
@@ -95,16 +95,15 @@ fn parse_missing_slots(value: &str, total: usize) -> Result<BTreeSet<usize>, JsV
 #[wasm_bindgen]
 impl DemoSession {
     #[wasm_bindgen(constructor)]
-    pub fn new(input: &str) -> Result<DemoSession, JsValue> {
-        let input_bytes = input.as_bytes();
-        if input_bytes.is_empty() {
+    pub fn new(input: &[u8]) -> Result<DemoSession, JsValue> {
+        if input.is_empty() {
             return Err(js_error("message cannot be empty"));
         }
-        if input_bytes.len() > MAX_INPUT_BYTES {
+        if input.len() > MAX_INPUT_BYTES {
             return Err(js_error("message exceeds 512-byte browser demo limit"));
         }
 
-        let symbols: Vec<SymbolId> = input_bytes
+        let symbols: Vec<SymbolId> = input
             .iter()
             .map(|byte| SymbolId(u16::from(*byte) + 1))
             .collect();
@@ -136,7 +135,7 @@ impl DemoSession {
         let bundle = FragmentBundle::split(&wire, FragmentPolicy::default()).map_err(js_error)?;
 
         Ok(Self {
-            input_bytes: input_bytes.to_vec(),
+            input_bytes: input.to_vec(),
             message_secret,
             transport_secret,
             symbol_key,
@@ -183,14 +182,13 @@ impl DemoSession {
         let mut reconstruction_error = None;
         let mut outer_authenticated = false;
         let mut inner_authenticated = false;
-        let mut receiver_text = None;
+        let mut receiver_bytes = None;
         let mut receiver_matches = false;
 
         if reconstruction_possible {
             match self.bundle.manifest().reconstruct(&available) {
                 Ok(reconstructed) => {
-                    reconstructed_wire_digest =
-                        Some(hex(blake3::hash(&reconstructed).as_bytes()));
+                    reconstructed_wire_digest = Some(hex(blake3::hash(&reconstructed).as_bytes()));
                     reconstruction_matches = reconstructed == self.wire;
 
                     if reconstruction_matches {
@@ -204,12 +202,9 @@ impl DemoSession {
                                 Ok(opened) => {
                                     outer_authenticated = true;
                                     inner_authenticated = true;
-                                    let incoming =
-                                        SecureSymbolStream::from_encoded(opened).map_err(js_error)?;
-                                    let alphabet: Vec<SymbolId> =
-                                        (1..=256).map(SymbolId).collect();
-                                    let mut decoded =
-                                        Vec::with_capacity(incoming.symbol_count());
+                                    let incoming = SecureSymbolStream::from_encoded(opened).map_err(js_error)?;
+                                    let alphabet: Vec<SymbolId> = (1..=256).map(SymbolId).collect();
+                                    let mut decoded = Vec::with_capacity(incoming.symbol_count());
 
                                     for index in 0..incoming.symbol_count() {
                                         let symbol = incoming
@@ -219,15 +214,12 @@ impl DemoSession {
                                             .0
                                             .checked_sub(1)
                                             .and_then(|value| u8::try_from(value).ok())
-                                            .ok_or_else(|| {
-                                                js_error("decoded symbol is outside browser adapter alphabet")
-                                            })?;
+                                            .ok_or_else(|| js_error("decoded symbol is outside browser adapter alphabet"))?;
                                         decoded.push(byte);
                                     }
 
                                     receiver_matches = decoded == self.input_bytes;
-                                    receiver_text =
-                                        Some(String::from_utf8(decoded).map_err(js_error)?);
+                                    receiver_bytes = Some(decoded);
                                 }
                                 Err(error) => reconstruction_error = Some(error.to_string()),
                             },
@@ -262,7 +254,7 @@ impl DemoSession {
             reconstruction_error,
             outer_authenticated,
             inner_authenticated,
-            receiver_text,
+            receiver_bytes,
             receiver_matches,
         };
 
@@ -277,7 +269,7 @@ pub fn sigil_demo_version() -> String {
 
 #[wasm_bindgen]
 pub fn run_protocol_demo(input: &str, requested_loss: u8) -> Result<String, JsValue> {
-    let session = DemoSession::new(input)?;
+    let session = DemoSession::new(input.as_bytes())?;
     let loss = usize::from(requested_loss).min(FragmentPolicy::default().parity_shards());
     let slots = (1..=loss)
         .map(|slot| slot.to_string())
