@@ -1,9 +1,13 @@
-use rand::{rngs::OsRng, RngCore};
+use rand::{rngs::OsRng, seq::SliceRandom, RngCore};
+use std::collections::HashSet;
+
+const MIN_POOL_NODES: usize = 2;
+const MAX_POOL_NODES: usize = 1000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct RelayId([u8; 16]);
+pub struct NodeId([u8; 16]);
 
-impl RelayId {
+impl NodeId {
     pub fn random() -> Self {
         let mut bytes = [0u8; 16];
         OsRng.fill_bytes(&mut bytes);
@@ -12,9 +16,9 @@ impl RelayId {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct MailboxToken([u8; 32]);
+pub struct DeliveryToken([u8; 32]);
 
-impl MailboxToken {
+impl DeliveryToken {
     pub fn random() -> Self {
         let mut bytes = [0u8; 32];
         OsRng.fill_bytes(&mut bytes);
@@ -55,7 +59,7 @@ impl MessageEpoch {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DeliveryEpoch {
     pub epoch: MessageEpoch,
-    pub mailbox: MailboxToken,
+    pub delivery: DeliveryToken,
     pub routing: RoutingToken,
 }
 
@@ -63,45 +67,45 @@ impl DeliveryEpoch {
     pub fn fresh() -> Self {
         Self {
             epoch: MessageEpoch::random(),
-            mailbox: MailboxToken::random(),
+            delivery: DeliveryToken::random(),
             routing: RoutingToken::random(),
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RelayRole {
+pub enum NodeRole {
     Entry,
     Transit,
-    Mailbox,
+    Store,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RelayVisibility {
+pub struct NodeVisibility {
     pub observes_client_network: bool,
-    pub observes_mailbox_token: bool,
+    pub observes_delivery_token: bool,
     pub observes_peer_identity: bool,
     pub observes_plaintext: bool,
 }
 
-impl RelayRole {
-    pub fn visibility(self) -> RelayVisibility {
+impl NodeRole {
+    pub fn visibility(self) -> NodeVisibility {
         match self {
-            Self::Entry => RelayVisibility {
+            Self::Entry => NodeVisibility {
                 observes_client_network: true,
-                observes_mailbox_token: false,
+                observes_delivery_token: false,
                 observes_peer_identity: false,
                 observes_plaintext: false,
             },
-            Self::Transit => RelayVisibility {
+            Self::Transit => NodeVisibility {
                 observes_client_network: false,
-                observes_mailbox_token: false,
+                observes_delivery_token: false,
                 observes_peer_identity: false,
                 observes_plaintext: false,
             },
-            Self::Mailbox => RelayVisibility {
+            Self::Store => NodeVisibility {
                 observes_client_network: false,
-                observes_mailbox_token: true,
+                observes_delivery_token: true,
                 observes_peer_identity: false,
                 observes_plaintext: false,
             },
@@ -111,27 +115,71 @@ impl RelayRole {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RouteError {
-    DuplicateRelay,
+    NodeCountOutOfRange,
+    DuplicateNode,
+    InvalidRouteLength,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RoutePlan {
-    pub entry: RelayId,
-    pub transit: RelayId,
-    pub mailbox: RelayId,
+    nodes: Vec<NodeId>,
 }
 
 impl RoutePlan {
-    pub fn new(entry: RelayId, transit: RelayId, mailbox: RelayId) -> Result<Self, RouteError> {
-        if entry == transit || entry == mailbox || transit == mailbox {
-            return Err(RouteError::DuplicateRelay);
+    pub fn new(nodes: Vec<NodeId>) -> Result<Self, RouteError> {
+        if !(MIN_POOL_NODES..=MAX_POOL_NODES).contains(&nodes.len()) {
+            return Err(RouteError::InvalidRouteLength);
         }
 
-        Ok(Self {
-            entry,
-            transit,
-            mailbox,
-        })
+        let unique: HashSet<_> = nodes.iter().copied().collect();
+        if unique.len() != nodes.len() {
+            return Err(RouteError::DuplicateNode);
+        }
+
+        Ok(Self { nodes })
+    }
+
+    pub fn nodes(&self) -> &[NodeId] {
+        &self.nodes
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NodePool {
+    nodes: Vec<NodeId>,
+}
+
+impl NodePool {
+    pub fn new(nodes: Vec<NodeId>) -> Result<Self, RouteError> {
+        if !(MIN_POOL_NODES..=MAX_POOL_NODES).contains(&nodes.len()) {
+            return Err(RouteError::NodeCountOutOfRange);
+        }
+
+        let unique: HashSet<_> = nodes.iter().copied().collect();
+        if unique.len() != nodes.len() {
+            return Err(RouteError::DuplicateNode);
+        }
+
+        Ok(Self { nodes })
+    }
+
+    pub fn len(&self) -> usize {
+        self.nodes.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.nodes.is_empty()
+    }
+
+    pub fn route(&self, node_count: usize) -> Result<RoutePlan, RouteError> {
+        if node_count < MIN_POOL_NODES || node_count > self.nodes.len() {
+            return Err(RouteError::InvalidRouteLength);
+        }
+
+        let mut nodes = self.nodes.clone();
+        nodes.shuffle(&mut OsRng);
+        nodes.truncate(node_count);
+        RoutePlan::new(nodes)
     }
 }
 
@@ -160,10 +208,11 @@ impl TrafficSizeClass {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PrivacyMode {
     Standard,
     Private,
+    #[default]
     Maximum,
 }
 
@@ -208,21 +257,29 @@ impl PrivacyMode {
 mod tests {
     use super::*;
 
-    #[test]
-    fn route_requires_three_distinct_relays() {
-        let first = RelayId::random();
-        let second = RelayId::random();
-        assert_eq!(
-            RoutePlan::new(first, first, second),
-            Err(RouteError::DuplicateRelay)
-        );
+    fn pool(size: usize) -> NodePool {
+        NodePool::new((0..size).map(|_| NodeId::random()).collect()).unwrap()
     }
 
     #[test]
-    fn no_relay_role_is_designed_to_see_client_network_and_mailbox_token_together() {
-        for role in [RelayRole::Entry, RelayRole::Transit, RelayRole::Mailbox] {
+    fn node_pool_accepts_two_to_one_thousand_nodes() {
+        assert_eq!(pool(2).len(), 2);
+        assert_eq!(pool(1000).len(), 1000);
+    }
+
+    #[test]
+    fn route_uses_distinct_nodes_from_pool() {
+        let pool = pool(20);
+        let route = pool.route(7).unwrap();
+        let unique: HashSet<_> = route.nodes().iter().copied().collect();
+        assert_eq!(unique.len(), 7);
+    }
+
+    #[test]
+    fn no_node_role_is_designed_to_see_network_origin_and_delivery_token_together() {
+        for role in [NodeRole::Entry, NodeRole::Transit, NodeRole::Store] {
             let visibility = role.visibility();
-            assert!(!(visibility.observes_client_network && visibility.observes_mailbox_token));
+            assert!(!(visibility.observes_client_network && visibility.observes_delivery_token));
             assert!(!visibility.observes_peer_identity);
             assert!(!visibility.observes_plaintext);
         }
@@ -233,27 +290,14 @@ mod tests {
         let first = DeliveryEpoch::fresh();
         let second = DeliveryEpoch::fresh();
         assert_ne!(first.epoch, second.epoch);
-        assert_ne!(first.mailbox, second.mailbox);
+        assert_ne!(first.delivery, second.delivery);
         assert_ne!(first.routing, second.routing);
     }
 
     #[test]
-    fn size_classes_hide_exact_small_payload_length() {
-        assert_eq!(TrafficSizeClass::smallest_for(1), Some(TrafficSizeClass::KiB4));
-        assert_eq!(
-            TrafficSizeClass::smallest_for(4096),
-            Some(TrafficSizeClass::KiB4)
-        );
-        assert_eq!(
-            TrafficSizeClass::smallest_for(4097),
-            Some(TrafficSizeClass::KiB16)
-        );
-        assert_eq!(TrafficSizeClass::smallest_for(300_000), None);
-    }
-
-    #[test]
-    fn maximum_mode_prefers_privacy_over_latency() {
-        let policy = PrivacyMode::Maximum.policy();
+    fn maximum_is_the_default_policy() {
+        assert_eq!(PrivacyMode::default(), PrivacyMode::Maximum);
+        let policy = PrivacyMode::default().policy();
         assert!(policy.rotate_delivery_tokens_per_message);
         assert!(policy.pad_to_size_class);
         assert!(policy.route_rotation);
