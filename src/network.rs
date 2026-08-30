@@ -24,10 +24,6 @@ impl DeliveryToken {
         OsRng.fill_bytes(&mut bytes);
         Self(bytes)
     }
-
-    pub(crate) fn as_bytes(&self) -> &[u8; 32] {
-        &self.0
-    }
 }
 
 impl fmt::Debug for DeliveryToken {
@@ -44,10 +40,6 @@ impl RoutingToken {
         let mut bytes = [0u8; 32];
         OsRng.fill_bytes(&mut bytes);
         Self(bytes)
-    }
-
-    pub(crate) fn as_bytes(&self) -> &[u8; 32] {
-        &self.0
     }
 }
 
@@ -352,8 +344,8 @@ mod tests {
     #[test]
     fn ephemeral_network_tokens_are_redacted_in_debug_output() {
         let epoch = DeliveryEpoch::fresh();
-        let delivery_bytes = format!("{:?}", epoch.delivery.as_bytes());
-        let routing_bytes = format!("{:?}", epoch.routing.as_bytes());
+        let delivery_bytes = format!("{:?}", epoch.delivery.0);
+        let routing_bytes = format!("{:?}", epoch.routing.0);
         let debug = format!("{epoch:?}");
 
         assert!(debug.contains("REDACTED"));
