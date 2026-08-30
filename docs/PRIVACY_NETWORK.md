@@ -1,109 +1,145 @@
 # Privacy network
 
-Sigil is an online messenger with a dedicated transport stack. A general-purpose browser is not part of the message path.
+Sigil is an online messenger with a dedicated transport stack. A browser/WebView is not part of the message-delivery path.
 
 ## Goal
 
-Reduce metadata concentration and linkability so that no single Sigil-operated component is designed to know all of:
+Reduce metadata concentration and stable identifiers without claiming impossible anonymity.
+
+The network model is designed so no single node role needs all of:
 
 - the client's original network address
 - the peer's cryptographic identity
-- the destination mailbox meaning
+- a permanent recipient identifier
 - plaintext content
 
-End-to-end encryption protects content. Relay separation and ephemeral delivery state reduce what individual infrastructure components can learn.
+End-to-end encryption protects content. Ephemeral delivery state and role separation limit what individual infrastructure components are designed to learn.
 
-## Route model
+## No permanent mailbox
+
+Sigil does not require a stable mailbox identifier in the core model.
+
+Each delivery epoch creates fresh opaque state:
 
 ```text
-Client
-  |
-optional VPN / encrypted tunnel
-  |
-Entry relay
-  |
-Transit relay
-  |
-Mailbox relay
+MessageEpoch
+DeliveryToken
+RoutingToken
 ```
 
-The receiver uses an independent route to retrieve opaque envelopes.
+A `DeliveryToken` is not a username, account ID or human identity. It is bounded delivery state intended to rotate.
 
-## Relay roles
+A future authenticated ratchet/session must derive or distribute these values safely so both endpoints advance without exposing a permanent network handle.
+
+## Node pool
+
+The current Rust model supports a pool containing 2 to 1000 distinct nodes.
+
+An individual route selects only the nodes needed for that delivery:
+
+```text
+client
+  |
+entry
+  |
+zero or more transit nodes
+  |
+store/delivery
+```
+
+Routes contain distinct node IDs and can rotate independently between deliveries.
+
+This is a model and policy layer. There are no live Sigil nodes or deployed routing protocol in the repository yet.
+
+## Node knowledge
 
 ### Entry
 
-May observe the source network connection. It should not receive peer identity, a human contact label, plaintext or the final mailbox token.
+May observe the incoming client network connection.
+
+It is not designed to receive peer identity, plaintext or the final delivery token.
 
 ### Transit
 
-Forwards opaque traffic between route layers. It should not receive application plaintext or stable human identity.
+Forwards opaque transport state.
 
-### Mailbox
+It is not designed to require a human identity or application plaintext.
 
-Stores/delivers opaque envelopes addressed by short-lived mailbox capabilities. It should not require the sender's original network address or a human-readable recipient identity.
+### Store/delivery
 
-## Ephemeral delivery state
+May receive a short-lived opaque delivery token and encrypted transport object.
 
-A mailbox token is not a username. The protocol target is for delivery state to rotate aggressively.
+It is not designed to require the original client network address, peer identity or plaintext.
 
-Conceptually:
-
-```text
-message epoch N
-  routing token A
-  mailbox token B
-
-message epoch N+1
-  routing token C
-  mailbox token D
-```
-
-The current Rust core can generate independent opaque delivery epochs. A future authenticated ratchet/session must derive or distribute these values so both endpoints can advance safely without exposing a permanent recipient identifier.
-
-Repeated random tokens by themselves do not create anonymity. Correct synchronization, replay handling, relay behavior and cryptographic binding still need implementation and review.
-
-## Traffic-size classes
-
-Exact ciphertext length can leak information. Sigil models fixed size classes for small envelopes so different payload lengths can share the same external size.
-
-Current model classes are 4 KiB, 16 KiB, 64 KiB and 256 KiB. Larger media uses a separate chunking strategy.
-
-Padding consumes bandwidth and does not conceal timing or direction by itself.
-
-## Privacy modes
+## Privacy policy
 
 The core models three policy targets:
 
-- `Standard`: fresh delivery tokens, latency-focused
-- `Private`: token rotation + size classes + route rotation target
-- `Maximum`: adds batching and bounded-delay targets, accepting higher latency/bandwidth cost
+- `Standard`: fresh delivery state, latency-focused
+- `Private`: adds size-class padding and route rotation targets
+- `Maximum`: adds batching and bounded-delay targets, accepting higher latency and bandwidth cost
 
-`Maximum` is a design target, not a claim that a mix network is currently implemented.
+`Maximum` is the default policy target in the current core.
+
+These are policy flags, not proof that a mix network exists.
+
+## Size leakage
+
+Ciphertext size can reveal information.
+
+Sigil currently models size classes of 4 KiB, 16 KiB, 64 KiB and 256 KiB for small envelopes. Larger media uses its own chunking path.
+
+Padding hides exact length within a class but does not hide timing, direction or the fact that traffic exists.
 
 ## Timing correlation
 
-Even perfect payload encryption does not hide the fact that packets exist. An observer watching both ends may correlate timing, direction, volume and bursts.
+An observer watching both sides of a route may correlate timing, direction, volume and bursts even when payload encryption is perfect.
 
-The maximum-privacy transport may therefore evaluate:
+Future transport experiments may evaluate:
 
 - route rotation
-- batching messages into delivery windows
+- batching into delivery windows
 - bounded randomized delay
 - size classes/padding
 
-These reduce some easy correlations at a cost in latency and battery. They do not guarantee anonymity against a global passive observer.
+These techniques trade latency, bandwidth and battery for reduced simple linkability. They do not guarantee anonymity against a sufficiently capable global observer.
 
 Sigil does not claim that an IP address becomes impossible to trace.
 
+## Future encrypted-piece delivery
+
+A later phase may encode an already encrypted wire envelope into redundant pieces for resilient distributed storage/delivery.
+
+The required order is:
+
+```text
+inner authenticated encryption
+  -> outer authenticated encryption
+  -> optional padding
+  -> redundancy/fragmentation
+  -> node delivery
+```
+
+Fragmentation must never be treated as encryption.
+
+A piece should not require a human recipient name or permanent message identifier merely to be stored. Reconstruction state belongs at the authenticated endpoints or must be derived from authenticated session state.
+
+This phase is not implemented yet.
+
 ## VPN use
 
-A VPN/encrypted tunnel can protect the local path and move first-hop visibility away from the access network. The VPN endpoint can still observe the client's connection, so VPN protection is an outer layer, not the identity/anonymity mechanism.
+A VPN or encrypted tunnel may protect the local first hop and move immediate network visibility away from the access provider.
+
+The VPN endpoint can still observe the client's connection. VPN use therefore remains an outer transport option, not a proof of anonymity.
 
 ## Push notifications
 
-Push providers should receive no message text, sender alias, visual marker or media preview. A push should carry only an opaque wake-up signal; the client retrieves and authenticates data through the privacy route.
+Push providers should receive no message text, contact alias, visual marker or media preview.
+
+A push should carry only an opaque wake-up signal; the client then retrieves and authenticates data through the normal transport path.
 
 ## Browser boundary
 
-Links initially open externally with explicit user action. A future isolated link viewer must run outside the secure composition, visual and cryptographic state domains and must not receive conversation keys or sensitive buffers.
+Links initially open externally with explicit user action.
+
+Any future isolated link viewer must run outside the secure composition, cryptographic and visual state domains and must not receive message or transport secrets.
