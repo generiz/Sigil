@@ -4,13 +4,19 @@ use chacha20poly1305::{
     XChaCha20Poly1305, XNonce,
 };
 use rand::{rngs::OsRng, RngCore};
-use std::{error::Error, fmt};
+use std::{
+    collections::{HashSet, VecDeque},
+    error::Error,
+    fmt,
+};
 use zeroize::{Zeroize, Zeroizing};
 
 const WIRE_VERSION: u8 = 1;
 const NONCE_LEN: usize = 24;
+const AEAD_TAG_LEN: usize = 16;
+const MAX_WIRE_BYTES: usize = 1024 * 1024;
+const DEFAULT_REPLAY_WINDOW: usize = 4096;
 
-#[derive(Debug)]
 pub struct MessageSecret([u8; 32]);
 
 impl MessageSecret {
@@ -25,13 +31,18 @@ impl MessageSecret {
     }
 }
 
+impl fmt::Debug for MessageSecret {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("MessageSecret([REDACTED])")
+    }
+}
+
 impl Drop for MessageSecret {
     fn drop(&mut self) {
         self.0.zeroize();
     }
 }
 
-#[derive(Debug)]
 pub struct TransportSecret([u8; 32]);
 
 impl TransportSecret {
@@ -46,6 +57,12 @@ impl TransportSecret {
     }
 }
 
+impl fmt::Debug for TransportSecret {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("TransportSecret([REDACTED])")
+    }
+}
+
 impl Drop for TransportSecret {
     fn drop(&mut self) {
         self.0.zeroize();
@@ -57,6 +74,8 @@ pub enum CryptoError {
     AuthenticationFailed,
     InvalidKey,
     MalformedEnvelope,
+    EnvelopeTooLarge,
+    ReplayDetected,
 }
 
 impl fmt::Display for CryptoError {
@@ -65,6 +84,8 @@ impl fmt::Display for CryptoError {
             Self::AuthenticationFailed => write!(f, "authentication failed"),
             Self::InvalidKey => write!(f, "invalid encryption key"),
             Self::MalformedEnvelope => write!(f, "malformed layered envelope"),
+            Self::EnvelopeTooLarge => write!(f, "layered envelope exceeds size limit"),
+            Self::ReplayDetected => write!(f, "replayed layered envelope rejected"),
         }
     }
 }
@@ -126,6 +147,10 @@ impl LayeredEnvelope {
         inner_nonce.zeroize();
         inner_packet.zeroize();
 
+        if 1 + NONCE_LEN + outer_ciphertext.len() > MAX_WIRE_BYTES {
+            return Err(CryptoError::EnvelopeTooLarge);
+        }
+
         Ok(Self {
             outer_nonce,
             outer_ciphertext,
@@ -157,7 +182,7 @@ impl LayeredEnvelope {
             )
             .map_err(|_| CryptoError::AuthenticationFailed)?;
 
-        if inner_packet.len() < 1 + NONCE_LEN || inner_packet[0] != WIRE_VERSION {
+        if inner_packet.len() < 1 + NONCE_LEN + AEAD_TAG_LEN || inner_packet[0] != WIRE_VERSION {
             inner_packet.zeroize();
             return Err(CryptoError::MalformedEnvelope);
         }
@@ -190,7 +215,10 @@ impl LayeredEnvelope {
     }
 
     pub fn from_wire_bytes(wire: &[u8]) -> Result<Self, CryptoError> {
-        if wire.len() < 1 + NONCE_LEN || wire[0] != WIRE_VERSION {
+        if wire.len() > MAX_WIRE_BYTES {
+            return Err(CryptoError::EnvelopeTooLarge);
+        }
+        if wire.len() < 1 + NONCE_LEN + AEAD_TAG_LEN || wire[0] != WIRE_VERSION {
             return Err(CryptoError::MalformedEnvelope);
         }
 
@@ -201,6 +229,60 @@ impl LayeredEnvelope {
             outer_nonce,
             outer_ciphertext: wire[1 + NONCE_LEN..].to_vec(),
         })
+    }
+}
+
+#[derive(Debug)]
+pub struct ReplayGuard {
+    capacity: usize,
+    order: VecDeque<[u8; 32]>,
+    seen: HashSet<[u8; 32]>,
+}
+
+impl Default for ReplayGuard {
+    fn default() -> Self {
+        Self::new(DEFAULT_REPLAY_WINDOW)
+    }
+}
+
+impl ReplayGuard {
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            capacity: capacity.max(1),
+            order: VecDeque::new(),
+            seen: HashSet::new(),
+        }
+    }
+
+    pub fn open_once(
+        &mut self,
+        envelope: &LayeredEnvelope,
+        message_secret: &MessageSecret,
+        transport_secret: &TransportSecret,
+        application_aad: &[u8],
+        transport_aad: &[u8],
+    ) -> Result<Vec<u8>, CryptoError> {
+        let digest = *blake3::hash(&envelope.to_wire_bytes()).as_bytes();
+        if self.seen.contains(&digest) {
+            return Err(CryptoError::ReplayDetected);
+        }
+
+        let opened = envelope.open(
+            message_secret,
+            transport_secret,
+            application_aad,
+            transport_aad,
+        )?;
+
+        self.seen.insert(digest);
+        self.order.push_back(digest);
+        while self.order.len() > self.capacity {
+            if let Some(expired) = self.order.pop_front() {
+                self.seen.remove(&expired);
+            }
+        }
+
+        Ok(opened)
     }
 }
 
@@ -287,6 +369,110 @@ mod tests {
                 b"transport"
             ),
             Err(CryptoError::AuthenticationFailed)
+        );
+    }
+
+    #[test]
+    fn secret_debug_output_is_redacted() {
+        let message = MessageSecret::random();
+        let transport = TransportSecret::random();
+        assert_eq!(format!("{message:?}"), "MessageSecret([REDACTED])");
+        assert_eq!(format!("{transport:?}"), "TransportSecret([REDACTED])");
+    }
+
+    #[test]
+    fn malformed_and_oversized_wire_objects_are_rejected() {
+        assert_eq!(
+            LayeredEnvelope::from_wire_bytes(&[WIRE_VERSION; NONCE_LEN]),
+            Err(CryptoError::MalformedEnvelope)
+        );
+        let oversized = vec![0u8; MAX_WIRE_BYTES + 1];
+        assert_eq!(
+            LayeredEnvelope::from_wire_bytes(&oversized),
+            Err(CryptoError::EnvelopeTooLarge)
+        );
+    }
+
+    #[test]
+    fn exact_authenticated_replay_is_rejected() {
+        let message_secret = MessageSecret::random();
+        let transport_secret = TransportSecret::random();
+        let envelope = LayeredEnvelope::seal(
+            &[4, 2, 4, 2],
+            &message_secret,
+            &transport_secret,
+            b"app",
+            b"transport",
+        )
+        .unwrap();
+        let mut guard = ReplayGuard::default();
+
+        assert_eq!(
+            guard
+                .open_once(
+                    &envelope,
+                    &message_secret,
+                    &transport_secret,
+                    b"app",
+                    b"transport",
+                )
+                .unwrap(),
+            vec![4, 2, 4, 2]
+        );
+        assert_eq!(
+            guard.open_once(
+                &envelope,
+                &message_secret,
+                &transport_secret,
+                b"app",
+                b"transport",
+            ),
+            Err(CryptoError::ReplayDetected)
+        );
+    }
+
+    #[test]
+    fn fresh_envelope_with_same_plaintext_is_not_a_replay() {
+        let message_secret = MessageSecret::random();
+        let transport_secret = TransportSecret::random();
+        let first = LayeredEnvelope::seal(
+            &[1, 1, 2, 3],
+            &message_secret,
+            &transport_secret,
+            b"app",
+            b"transport",
+        )
+        .unwrap();
+        let second = LayeredEnvelope::seal(
+            &[1, 1, 2, 3],
+            &message_secret,
+            &transport_secret,
+            b"app",
+            b"transport",
+        )
+        .unwrap();
+        let mut guard = ReplayGuard::default();
+
+        guard
+            .open_once(
+                &first,
+                &message_secret,
+                &transport_secret,
+                b"app",
+                b"transport",
+            )
+            .unwrap();
+        assert_eq!(
+            guard
+                .open_once(
+                    &second,
+                    &message_secret,
+                    &transport_secret,
+                    b"app",
+                    b"transport",
+                )
+                .unwrap(),
+            vec![1, 1, 2, 3]
         );
     }
 }
