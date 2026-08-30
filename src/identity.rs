@@ -30,11 +30,17 @@ impl IdentityFingerprint {
 
     pub fn to_grouped_hex(&self) -> String {
         let mut output = String::with_capacity(79);
-        for (index, pair) in self.0.chunks_exact(2).enumerate() {
+        for index in 0..16 {
             if index > 0 {
                 output.push(' ');
             }
-            let _ = write!(output, "{:02X}{:02X}", pair[0], pair[1]);
+            let offset = index * 2;
+            let _ = write!(
+                output,
+                "{:02X}{:02X}",
+                self.0[offset],
+                self.0[offset + 1]
+            );
         }
         output
     }
