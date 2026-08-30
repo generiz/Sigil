@@ -1,6 +1,6 @@
 [package]
 name = "sigil-core"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "Core primitives for secure composition, pseudonymous identity and privacy-oriented messaging"
 license = "MIT"
@@ -9,4 +9,5 @@ license = "MIT"
 blake3 = "1.5"
 chacha20poly1305 = "0.10"
 rand = "0.8"
+reed-solomon-erasure = "6.0"
 zeroize = "1.8"
