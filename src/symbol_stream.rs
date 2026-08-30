@@ -5,7 +5,6 @@ use zeroize::Zeroize;
 
 const SYMBOL_CODE_LEN: usize = 16;
 
-#[derive(Debug)]
 pub struct SymbolMapKey([u8; 32]);
 
 impl SymbolMapKey {
@@ -21,6 +20,12 @@ impl SymbolMapKey {
         let mut code = [0u8; SYMBOL_CODE_LEN];
         code.copy_from_slice(&digest.as_bytes()[..SYMBOL_CODE_LEN]);
         code
+    }
+}
+
+impl fmt::Debug for SymbolMapKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("SymbolMapKey([REDACTED])")
     }
 }
 
@@ -49,9 +54,17 @@ impl fmt::Display for SymbolStreamError {
 
 impl Error for SymbolStreamError {}
 
-#[derive(Debug)]
 pub struct SecureSymbolStream {
     bytes: Vec<u8>,
+}
+
+impl fmt::Debug for SecureSymbolStream {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SecureSymbolStream")
+            .field("symbol_count", &self.symbol_count())
+            .field("bytes", &"[REDACTED]")
+            .finish()
+    }
 }
 
 impl SecureSymbolStream {
@@ -159,5 +172,16 @@ mod tests {
         let key = SymbolMapKey::from_message_secret(&secret);
         let stream = SecureSymbolStream::encode(&[SymbolId(1), SymbolId(2)], &key);
         assert_eq!(stream.as_bytes().len(), 2 * SYMBOL_CODE_LEN);
+    }
+
+    #[test]
+    fn symbol_state_debug_output_is_redacted() {
+        let secret = MessageSecret::random();
+        let key = SymbolMapKey::from_message_secret(&secret);
+        let stream = SecureSymbolStream::encode(&[SymbolId(1), SymbolId(2)], &key);
+
+        assert!(format!("{key:?}").contains("REDACTED"));
+        assert!(format!("{stream:?}").contains("REDACTED"));
+        assert!(!format!("{stream:?}").contains(&format!("{:?}", stream.as_bytes())));
     }
 }
