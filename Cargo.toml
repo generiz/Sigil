@@ -12,6 +12,7 @@ crate-type = ["rlib", "cdylib"]
 blake3 = "1.5"
 chacha20poly1305 = "0.10"
 getrandom = { version = "0.2", features = ["js"] }
+instant = { version = "0.1", features = ["wasm-bindgen"] }
 rand = "0.8"
 reed-solomon-erasure = "6.0"
 serde = { version = "1.0", features = ["derive"] }
