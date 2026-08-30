@@ -188,7 +188,10 @@ mod tests {
     #[test]
     fn duplicate_symbols_are_rejected() {
         let result = LayoutSession::new(&[SymbolId(7), SymbolId(7)]);
-        assert_eq!(result.unwrap_err(), ComposerError::DuplicateSymbol(SymbolId(7)));
+        assert_eq!(
+            result.unwrap_err(),
+            ComposerError::DuplicateSymbol(SymbolId(7))
+        );
     }
 
     #[test]

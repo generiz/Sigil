@@ -337,12 +337,7 @@ mod tests {
         let tampered = LayeredEnvelope::from_wire_bytes(&wire).unwrap();
 
         assert_eq!(
-            tampered.open(
-                &message_secret,
-                &transport_secret,
-                b"app",
-                b"transport"
-            ),
+            tampered.open(&message_secret, &transport_secret, b"app", b"transport"),
             Err(CryptoError::AuthenticationFailed)
         );
     }
@@ -362,12 +357,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            envelope.open(
-                &message_secret,
-                &wrong_transport,
-                b"app",
-                b"transport"
-            ),
+            envelope.open(&message_secret, &wrong_transport, b"app", b"transport"),
             Err(CryptoError::AuthenticationFailed)
         );
     }

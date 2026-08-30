@@ -35,12 +35,7 @@ impl IdentityFingerprint {
                 output.push(' ');
             }
             let offset = index * 2;
-            let _ = write!(
-                output,
-                "{:02X}{:02X}",
-                self.0[offset],
-                self.0[offset + 1]
-            );
+            let _ = write!(output, "{:02X}{:02X}", self.0[offset], self.0[offset + 1]);
         }
         output
     }
@@ -64,14 +59,7 @@ impl ContactAlias {
     pub fn display(&self) -> String {
         format!(
             "{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}",
-            self.0[0],
-            self.0[1],
-            self.0[2],
-            self.0[3],
-            self.0[4],
-            self.0[5],
-            self.0[6],
-            self.0[7]
+            self.0[0], self.0[1], self.0[2], self.0[3], self.0[4], self.0[5], self.0[6], self.0[7]
         )
     }
 }

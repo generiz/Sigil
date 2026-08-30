@@ -80,12 +80,18 @@ fn short_hex(bytes: &[u8], take: usize) -> String {
 
 fn parse_missing_slots(value: &str, total: usize) -> Result<BTreeSet<usize>, JsValue> {
     let mut slots = BTreeSet::new();
-    for part in value.split(',').map(str::trim).filter(|part| !part.is_empty()) {
+    for part in value
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+    {
         let slot = part
             .parse::<usize>()
             .map_err(|_| js_error("missing fragment slots must be comma-separated integers"))?;
         if slot == 0 || slot > total {
-            return Err(js_error("missing fragment slot is outside this demo session"));
+            return Err(js_error(
+                "missing fragment slot is outside this demo session",
+            ));
         }
         slots.insert(slot);
     }
@@ -202,7 +208,8 @@ impl DemoSession {
                                 Ok(opened) => {
                                     outer_authenticated = true;
                                     inner_authenticated = true;
-                                    let incoming = SecureSymbolStream::from_encoded(opened).map_err(js_error)?;
+                                    let incoming = SecureSymbolStream::from_encoded(opened)
+                                        .map_err(js_error)?;
                                     let alphabet: Vec<SymbolId> = (1..=256).map(SymbolId).collect();
                                     let mut decoded = Vec::with_capacity(incoming.symbol_count());
 

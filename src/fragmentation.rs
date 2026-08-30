@@ -1,7 +1,11 @@
 use blake3::Hash;
 use rand::{rngs::OsRng, seq::SliceRandom, RngCore};
 use reed_solomon_erasure::galois_8::ReedSolomon;
-use std::{collections::{HashMap, HashSet}, error::Error, fmt};
+use std::{
+    collections::{HashMap, HashSet},
+    error::Error,
+    fmt,
+};
 use zeroize::Zeroize;
 
 const MIN_DATA_SHARDS: usize = 2;
@@ -111,10 +115,7 @@ impl FragmentManifest {
         self.shard_len
     }
 
-    pub fn reconstruct(
-        &self,
-        received: &[OpaqueFragment],
-    ) -> Result<Vec<u8>, FragmentError> {
+    pub fn reconstruct(&self, received: &[OpaqueFragment]) -> Result<Vec<u8>, FragmentError> {
         if received.len() < self.required_fragments() {
             return Err(FragmentError::InsufficientFragments);
         }
@@ -126,8 +127,7 @@ impl FragmentManifest {
             .collect();
 
         let mut seen_indices = HashSet::with_capacity(received.len());
-        let mut shards: Vec<Option<Vec<u8>>> =
-            (0..self.total_fragments()).map(|_| None).collect();
+        let mut shards: Vec<Option<Vec<u8>>> = (0..self.total_fragments()).map(|_| None).collect();
 
         for fragment in received {
             if fragment.payload.len() != self.shard_len {
@@ -150,11 +150,8 @@ impl FragmentManifest {
             return Err(FragmentError::InsufficientFragments);
         }
 
-        let codec = ReedSolomon::new(
-            self.policy.data_shards(),
-            self.policy.parity_shards(),
-        )
-        .map_err(|_| FragmentError::CodingFailure)?;
+        let codec = ReedSolomon::new(self.policy.data_shards(), self.policy.parity_shards())
+            .map_err(|_| FragmentError::CodingFailure)?;
 
         codec
             .reconstruct(&mut shards)
@@ -204,9 +201,7 @@ impl FragmentBundle {
             .collect();
         padded.zeroize();
 
-        shards.extend(
-            (0..policy.parity_shards()).map(|_| vec![0u8; shard_len]),
-        );
+        shards.extend((0..policy.parity_shards()).map(|_| vec![0u8; shard_len]));
 
         let codec = ReedSolomon::new(policy.data_shards(), policy.parity_shards())
             .map_err(|_| FragmentError::CodingFailure)?;
@@ -303,23 +298,31 @@ mod tests {
         let available = bundle.fragments()[8..].to_vec();
 
         assert_eq!(available.len(), 12);
-        assert_eq!(bundle.manifest().reconstruct(&available).unwrap(), ciphertext);
+        assert_eq!(
+            bundle.manifest().reconstruct(&available).unwrap(),
+            ciphertext
+        );
     }
 
     #[test]
     fn fragment_order_is_not_required_for_reconstruction() {
         let ciphertext = vec![0xA5; 19_003];
-        let bundle = FragmentBundle::split(&ciphertext, FragmentPolicy::new(6, 4).unwrap()).unwrap();
+        let bundle =
+            FragmentBundle::split(&ciphertext, FragmentPolicy::new(6, 4).unwrap()).unwrap();
         let mut available = bundle.fragments().to_vec();
         available.reverse();
         available.truncate(6);
 
-        assert_eq!(bundle.manifest().reconstruct(&available).unwrap(), ciphertext);
+        assert_eq!(
+            bundle.manifest().reconstruct(&available).unwrap(),
+            ciphertext
+        );
     }
 
     #[test]
     fn network_fragment_does_not_expose_shard_index() {
-        let bundle = FragmentBundle::split(&[7u8; 4096], FragmentPolicy::new(4, 2).unwrap()).unwrap();
+        let bundle =
+            FragmentBundle::split(&[7u8; 4096], FragmentPolicy::new(4, 2).unwrap()).unwrap();
         for fragment in bundle.fragments() {
             assert_eq!(fragment.capability().as_bytes().len(), CAPABILITY_LEN);
             assert_eq!(fragment.payload().len(), bundle.manifest().shard_len());
@@ -329,7 +332,8 @@ mod tests {
     #[test]
     fn corrupted_data_piece_is_detected_by_manifest_digest() {
         let ciphertext = (0..5000).map(|i| (i % 239) as u8).collect::<Vec<_>>();
-        let mut bundle = FragmentBundle::split(&ciphertext, FragmentPolicy::new(4, 2).unwrap()).unwrap();
+        let mut bundle =
+            FragmentBundle::split(&ciphertext, FragmentPolicy::new(4, 2).unwrap()).unwrap();
 
         let data_capability = bundle.manifest.entries[0].capability.clone();
         let fragment = bundle
@@ -347,7 +351,8 @@ mod tests {
 
     #[test]
     fn fewer_than_threshold_fragments_are_rejected() {
-        let bundle = FragmentBundle::split(&[3u8; 10_000], FragmentPolicy::new(5, 3).unwrap()).unwrap();
+        let bundle =
+            FragmentBundle::split(&[3u8; 10_000], FragmentPolicy::new(5, 3).unwrap()).unwrap();
         assert_eq!(
             bundle.manifest().reconstruct(&bundle.fragments()[..4]),
             Err(FragmentError::InsufficientFragments)

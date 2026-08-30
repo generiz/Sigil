@@ -11,9 +11,7 @@ pub mod visual;
 pub mod wasm_demo;
 
 pub use composer::{ComposerError, EphemeralToken, LayoutSession, SensitiveBuffer, SymbolId};
-pub use crypto::{
-    CryptoError, LayeredEnvelope, MessageSecret, ReplayGuard, TransportSecret,
-};
+pub use crypto::{CryptoError, LayeredEnvelope, MessageSecret, ReplayGuard, TransportSecret};
 pub use fragmentation::{
     FragmentBundle, FragmentCapability, FragmentError, FragmentManifest, FragmentPolicy,
     OpaqueFragment,
@@ -21,14 +19,10 @@ pub use fragmentation::{
 pub use identity::{
     ContactAlias, ContactRecord, IdentityFingerprint, IdentityPublicKey, TrustState,
 };
-pub use media::{
-    ChunkPlan, MediaKind, MediaNormalization, MediaPlanError, MediaTransferPlan,
-};
+pub use media::{ChunkPlan, MediaKind, MediaNormalization, MediaPlanError, MediaTransferPlan};
 pub use network::{
     DeliveryEpoch, DeliveryToken, MessageEpoch, NodeId, NodePool, NodeRole, NodeVisibility,
     PrivacyMode, PrivacyPolicy, RouteError, RoutePlan, RoutingToken, TrafficSizeClass,
 };
 pub use symbol_stream::{SecureSymbolStream, SymbolMapKey, SymbolStreamError};
-pub use visual::{
-    ContactVisualMarker, LocalVisualSecret, VisualEpochId, VisualRenderEpoch,
-};
+pub use visual::{ContactVisualMarker, LocalVisualSecret, VisualEpochId, VisualRenderEpoch};
