@@ -118,6 +118,7 @@ pub enum RouteError {
     NodeCountOutOfRange,
     DuplicateNode,
     InvalidRouteLength,
+    InvalidFragmentCount,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -180,6 +181,23 @@ impl NodePool {
         nodes.shuffle(&mut OsRng);
         nodes.truncate(node_count);
         RoutePlan::new(nodes)
+    }
+
+    pub fn targets_for_fragments(&self, fragment_count: usize) -> Result<Vec<NodeId>, RouteError> {
+        if fragment_count == 0 {
+            return Err(RouteError::InvalidFragmentCount);
+        }
+
+        let mut targets = Vec::with_capacity(fragment_count);
+        let mut round = self.nodes.clone();
+
+        while targets.len() < fragment_count {
+            round.shuffle(&mut OsRng);
+            let remaining = fragment_count - targets.len();
+            targets.extend(round.iter().take(remaining.min(round.len())).copied());
+        }
+
+        Ok(targets)
     }
 }
 
@@ -273,6 +291,25 @@ mod tests {
         let route = pool.route(7).unwrap();
         let unique: HashSet<_> = route.nodes().iter().copied().collect();
         assert_eq!(unique.len(), 7);
+    }
+
+    #[test]
+    fn fragment_targets_use_distinct_nodes_when_pool_is_large_enough() {
+        let pool = pool(30);
+        let targets = pool.targets_for_fragments(20).unwrap();
+        let unique: HashSet<_> = targets.iter().copied().collect();
+        assert_eq!(targets.len(), 20);
+        assert_eq!(unique.len(), 20);
+    }
+
+    #[test]
+    fn fragment_targets_spread_evenly_when_pool_is_small() {
+        let pool = pool(2);
+        let targets = pool.targets_for_fragments(20).unwrap();
+        let first = targets[0];
+        let first_count = targets.iter().filter(|node| **node == first).count();
+        assert_eq!(targets.len(), 20);
+        assert_eq!(first_count, 10);
     }
 
     #[test]
