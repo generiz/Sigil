@@ -1,5 +1,6 @@
 pub mod composer;
 pub mod crypto;
+pub mod fragmentation;
 pub mod identity;
 pub mod media;
 pub mod network;
@@ -8,6 +9,10 @@ pub mod visual;
 
 pub use composer::{ComposerError, EphemeralToken, LayoutSession, SensitiveBuffer, SymbolId};
 pub use crypto::{CryptoError, LayeredEnvelope, MessageSecret, TransportSecret};
+pub use fragmentation::{
+    FragmentBundle, FragmentCapability, FragmentError, FragmentManifest, FragmentPolicy,
+    OpaqueFragment,
+};
 pub use identity::{
     ContactAlias, ContactRecord, IdentityFingerprint, IdentityPublicKey, TrustState,
 };
