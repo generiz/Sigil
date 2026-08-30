@@ -82,10 +82,6 @@ impl VisualRenderEpoch {
     pub fn id(&self) -> VisualEpochId {
         self.id
     }
-
-    pub(crate) fn render_token(&self) -> &[u8; 32] {
-        &self.render_token
-    }
 }
 
 impl Drop for VisualRenderEpoch {
@@ -121,7 +117,7 @@ mod tests {
         let first = VisualRenderEpoch::fresh();
         let second = VisualRenderEpoch::fresh();
         assert_ne!(first.id(), second.id());
-        assert_ne!(first.render_token(), second.render_token());
+        assert_ne!(first.render_token, second.render_token);
     }
 
     #[test]
