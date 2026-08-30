@@ -1,5 +1,5 @@
 use rand::{rngs::OsRng, seq::SliceRandom, RngCore};
-use std::collections::HashSet;
+use std::{collections::HashSet, fmt};
 
 const MIN_POOL_NODES: usize = 2;
 const MAX_POOL_NODES: usize = 1000;
@@ -15,7 +15,7 @@ impl NodeId {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct DeliveryToken([u8; 32]);
 
 impl DeliveryToken {
@@ -25,12 +25,18 @@ impl DeliveryToken {
         Self(bytes)
     }
 
-    pub fn as_bytes(&self) -> &[u8; 32] {
+    pub(crate) fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+impl fmt::Debug for DeliveryToken {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("DeliveryToken([REDACTED])")
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RoutingToken([u8; 32]);
 
 impl RoutingToken {
@@ -40,12 +46,18 @@ impl RoutingToken {
         Self(bytes)
     }
 
-    pub fn as_bytes(&self) -> &[u8; 32] {
+    pub(crate) fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+impl fmt::Debug for RoutingToken {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("RoutingToken([REDACTED])")
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct MessageEpoch([u8; 16]);
 
 impl MessageEpoch {
@@ -53,6 +65,12 @@ impl MessageEpoch {
         let mut bytes = [0u8; 16];
         OsRng.fill_bytes(&mut bytes);
         Self(bytes)
+    }
+}
+
+impl fmt::Debug for MessageEpoch {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("MessageEpoch([REDACTED])")
     }
 }
 
@@ -329,6 +347,18 @@ mod tests {
         assert_ne!(first.epoch, second.epoch);
         assert_ne!(first.delivery, second.delivery);
         assert_ne!(first.routing, second.routing);
+    }
+
+    #[test]
+    fn ephemeral_network_tokens_are_redacted_in_debug_output() {
+        let epoch = DeliveryEpoch::fresh();
+        let delivery_bytes = format!("{:?}", epoch.delivery.as_bytes());
+        let routing_bytes = format!("{:?}", epoch.routing.as_bytes());
+        let debug = format!("{epoch:?}");
+
+        assert!(debug.contains("REDACTED"));
+        assert!(!debug.contains(&delivery_bytes));
+        assert!(!debug.contains(&routing_bytes));
     }
 
     #[test]
