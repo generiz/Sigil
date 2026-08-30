@@ -1,0 +1,64 @@
+name: pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'web-demo/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Install wasm-bindgen CLI
+        run: cargo install wasm-bindgen-cli --version 0.2.100 --locked
+      - name: Build Rust core for WebAssembly
+        run: cargo build --release --target wasm32-unknown-unknown
+      - name: Generate browser bindings
+        run: |
+          mkdir -p dist/pkg
+          wasm-bindgen target/wasm32-unknown-unknown/release/sigil_core.wasm \
+            --out-dir dist/pkg \
+            --out-name sigil_core \
+            --target web
+      - name: Assemble site
+        run: |
+          cp web-demo/index.html dist/index.html
+          cp web-demo/styles.css dist/styles.css
+          cp web-demo/app.js dist/app.js
+          touch dist/.nojekyll
+          test -s dist/pkg/sigil_core_bg.wasm
+          test -s dist/pkg/sigil_core.js
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
