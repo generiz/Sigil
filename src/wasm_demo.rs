@@ -58,8 +58,8 @@ fn short_hex(bytes: &[u8], take: usize) -> String {
 }
 
 #[wasm_bindgen]
-pub fn sigil_demo_version() -> &'static str {
-    env!("CARGO_PKG_VERSION")
+pub fn sigil_demo_version() -> String {
+    env!("CARGO_PKG_VERSION").to_owned()
 }
 
 #[wasm_bindgen]
