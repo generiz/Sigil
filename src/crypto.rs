@@ -363,6 +363,39 @@ mod tests {
     }
 
     #[test]
+    fn authenticated_context_is_bound_to_both_layers() {
+        let message_secret = MessageSecret::random();
+        let transport_secret = TransportSecret::random();
+        let envelope = LayeredEnvelope::seal(
+            &[5, 4, 3, 2, 1],
+            &message_secret,
+            &transport_secret,
+            b"conversation-A",
+            b"route-A",
+        )
+        .unwrap();
+
+        assert_eq!(
+            envelope.open(
+                &message_secret,
+                &transport_secret,
+                b"conversation-B",
+                b"route-A",
+            ),
+            Err(CryptoError::AuthenticationFailed)
+        );
+        assert_eq!(
+            envelope.open(
+                &message_secret,
+                &transport_secret,
+                b"conversation-A",
+                b"route-B",
+            ),
+            Err(CryptoError::AuthenticationFailed)
+        );
+    }
+
+    #[test]
     fn secret_debug_output_is_redacted() {
         let message = MessageSecret::random();
         let transport = TransportSecret::random();
@@ -418,6 +451,99 @@ mod tests {
                 b"transport",
             ),
             Err(CryptoError::ReplayDetected)
+        );
+    }
+
+    #[test]
+    fn failed_authentication_does_not_poison_replay_state() {
+        let message_secret = MessageSecret::random();
+        let transport_secret = TransportSecret::random();
+        let envelope = LayeredEnvelope::seal(
+            &[7, 7, 7],
+            &message_secret,
+            &transport_secret,
+            b"app",
+            b"transport",
+        )
+        .unwrap();
+        let mut guard = ReplayGuard::new(8);
+
+        assert_eq!(
+            guard.open_once(
+                &envelope,
+                &message_secret,
+                &transport_secret,
+                b"wrong-app",
+                b"transport",
+            ),
+            Err(CryptoError::AuthenticationFailed)
+        );
+        assert_eq!(
+            guard
+                .open_once(
+                    &envelope,
+                    &message_secret,
+                    &transport_secret,
+                    b"app",
+                    b"transport",
+                )
+                .unwrap(),
+            vec![7, 7, 7]
+        );
+    }
+
+    #[test]
+    fn replay_window_is_bounded_and_evicts_oldest_entry() {
+        let message_secret = MessageSecret::random();
+        let transport_secret = TransportSecret::random();
+        let first = LayeredEnvelope::seal(
+            &[1],
+            &message_secret,
+            &transport_secret,
+            b"app",
+            b"transport",
+        )
+        .unwrap();
+        let second = LayeredEnvelope::seal(
+            &[2],
+            &message_secret,
+            &transport_secret,
+            b"app",
+            b"transport",
+        )
+        .unwrap();
+        let mut guard = ReplayGuard::new(1);
+
+        guard
+            .open_once(
+                &first,
+                &message_secret,
+                &transport_secret,
+                b"app",
+                b"transport",
+            )
+            .unwrap();
+        guard
+            .open_once(
+                &second,
+                &message_secret,
+                &transport_secret,
+                b"app",
+                b"transport",
+            )
+            .unwrap();
+
+        assert_eq!(
+            guard
+                .open_once(
+                    &first,
+                    &message_secret,
+                    &transport_secret,
+                    b"app",
+                    b"transport",
+                )
+                .unwrap(),
+            vec![1]
         );
     }
 
